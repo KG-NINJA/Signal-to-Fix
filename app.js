@@ -8,9 +8,8 @@ const ORIGINAL_PREVIEW_LIMIT = 600;
 const ONBOARDING_HELP_TERMS = [
   'what to paste', "don't understand", 'dont understand', 'confusing', 'when to use',
   'how to use', 'where to use', 'getting started', 'first use', 'guide', 'instructions',
-  'how do i', 'how to', 'not sure how',
   '使い方', '何を貼る', 'わからない', '分からない', '迷う', 'どこで使う',
-  'どこで使え', 'いつ使う', 'ガイド', '説明', '初回', '最初', 'どうやって', '教えて'
+  'どこで使え', 'いつ使う', 'ガイド', '説明', '初回', '最初'
 ];
 
 const RULES = {
@@ -32,10 +31,11 @@ const RULES = {
   ],
   // Classification keywords. First strong match wins, then fallback scoring is used.
   types: {
-    bug: ['bug', 'broken', 'crash', 'error', 'failed', 'stuck', 'does not work', 'crashes', 'security', 'vulnerability', 'exploit', 'leak', 'login', 'sign in', 'sign up', 'エラー', '壊れた', '落ちる', '開かない', 'ログインできない', 'バグ', '脆弱性', 'セキュリティ', '漏洩'],
+    'login failure': ['login', 'sign in', 'sign up', 'ログイン', 'サインイン'],
+    bug: ['bug', 'broken', 'crash', 'error', 'failed', 'stuck', 'does not work', 'crashes', 'security', 'vulnerability', 'exploit', 'leak', 'エラー', '壊れた', '落ちる', '開かない', 'ログインできない', 'バグ', '脆弱性', 'セキュリティ', '漏洩'],
     'pricing complaint': ['expensive', 'price', 'pricing', 'billing', 'refund', 'cancel', '課金', '高い', '解約', '返金'],
     'onboarding complaint': ONBOARDING_HELP_TERMS,
-    'UX complaint': ['confusing', 'hard to use', 'slow', 'performance', 'lag', 'hang', '使いにくい', 'わかりにくい', '重い', '遅い', 'annoying', 'clunky', 'too many steps', 'ラグ'],
+    'UX complaint': ['confusing', 'hard to use', 'slow', '使いにくい', 'わかりにくい', '重い', '遅い', 'annoying', 'clunky', 'too many steps'],
     'feature request': ['missing', 'please add', 'need', 'wish', 'feature request', '追加してほしい', '対応してほしい', 'support'],
     'docs complaint': ['docs', 'documentation', 'guide', 'tutorial', 'api reference', 'example'],
     praise: ['love', 'great', 'awesome', 'thanks', 'amazing', '便利', '最高'],
@@ -71,6 +71,7 @@ const elements = {
   priorityRanking: $('priorityRanking'),
   issueClusters: $('issueClusters'),
   resultsList: $('resultsList'),
+  prSpecSection: $('prSpecSection'),
   summaryText: $('summaryText'),
   promptOutput: $('promptOutput')
 };
@@ -144,7 +145,7 @@ function analyzePost(post, index) {
 
   let decision = 'keep';
   if (!hasConcreteSignal && noiseScore >= 2) decision = 'discard';
-  else if (type === 'praise' || type === 'noise' || noiseScore > usefulScore) decision = 'reduce';
+  else if (type === 'praise' || type === 'noise' || evidence === 'vague opinion' || noiseScore > usefulScore) decision = 'reduce';
 
   const severity = includesAny(text, RULES.severityHigh) ? 'high' : includesAny(text, RULES.severityMedium) ? 'medium' : 'low';
   const actionability = actionabilityScore >= 3 ? 'high' : actionabilityScore >= 1 ? 'medium' : 'low';
@@ -207,10 +208,11 @@ function buildCodexPrompt() {
    Representative example: ${cluster.representativeExample}`).join('\n') || '1. No clustered priority yet; do not invent work without stronger evidence.';
   const topCluster = ranking[0];
   const evidence = useful.length ? useful.map((item) => `- ${item.evidenceLevel}: ${item.originalPost}`).join('\n') : '- No concrete evidence captured yet.';
+  const prSpec = topCluster ? buildPRSpecMarkdown(generatePRSpec(topCluster)) : 'No PR spec available.';
   const issues = useful.length ? useful.slice(0, 5).map((item, i) => `${i + 1}. ${item.extractedProblem}\n   - Type: ${item.type}\n   - Severity: ${item.severity}\n   - Actionability: ${item.actionability}\n   - Evidence level: ${item.evidenceLevel}\n   - Why classified this way: ${(item.reasons || ['no reason saved']).join(', ')}\n   - Suggested fix: ${item.suggestedFix}`).join('\n') : '1. No prioritized issue yet; do not invent work without stronger evidence.';
   const firstPass = topCluster ? `- Default first PR: address ${topCluster.title}.\n- Use this representative example as acceptance context: ${topCluster.representativeExample}` : '- Ask for more concrete feedback or reproduce the issue manually before changing product code.';
 
-  return `Title:\nImprove ${productName} based on X/Twitter feedback\n\nContext:\n- Product: ${productName}\n- Product URL: ${productUrl}\n- Target area: ${targetArea}\n\nEvidence:\n${evidence}\n\nTop priorities:\n${topPriorities}\n\nPrioritized issues:\n${issues}\n\nRecommended small first pass:\n${firstPass}\n- Keep changes small, focused, and easy to review.\n- Prefer the highest-ranked cluster if time is limited.\n\nNon-goals:\n- Do not redesign the entire app.\n- Do not add APIs, authentication, databases, or new dependencies.\n- Do not use the GitHub API unless it is already configured in this repository.\n- Do not overbuild beyond the evidence above.\n\nScreenshot instruction:\n- If browser/computer-use is available, capture before/after screenshots for the changed flow or UI.\n- If screenshots are not possible, explain why and include a concise manual verification note.\n\nCompatibility:\n- Keep the app stable and GitHub Pages compatible.`;
+  return `Title:\nImprove ${productName} based on X/Twitter feedback\n\nContext:\n- Product: ${productName}\n- Product URL: ${productUrl}\n- Target area: ${targetArea}\n\nEvidence:\n${evidence}\n\nTop priorities:\n${topPriorities}\n\nPR Spec for Highest Priority:\n${prSpec}\n\nPrioritized issues:\n${issues}\n\nRecommended small first pass:\n${firstPass}\n- Keep changes small, focused, and easy to review.\n- Prefer the highest-ranked cluster if time is limited.\n\nNon-goals:\n- Do not redesign the entire app.\n- Do not add APIs, authentication, databases, or new dependencies.\n- Do not use the GitHub API unless it is already configured in this repository.\n- Do not overbuild beyond the evidence above.\n\nScreenshot instruction:\n- If browser/computer-use is available, capture before/after screenshots for the changed flow or UI.\n- If screenshots are not possible, explain why and include a concise manual verification note.\n\nCompatibility:\n- Keep the app stable and GitHub Pages compatible.`;
 }
 
 function scoreResult(item) {
@@ -232,6 +234,8 @@ function render() {
   elements.priorityRanking.innerHTML = state.results.length ? renderPriorityRanking() : 'Priority ranking will appear after analysis.';
   elements.issueClusters.className = state.results.length ? 'issue-clusters' : 'issue-clusters empty-state';
   elements.issueClusters.innerHTML = state.results.length ? renderIssueClusters() : 'Issue clusters will appear after analysis.';
+  elements.prSpecSection.className = state.results.length ? 'pr-spec-section' : 'pr-spec-section empty-state';
+  elements.prSpecSection.innerHTML = state.results.length ? renderPRSpec() : 'PR Spec will appear after analysis.';
   elements.resultsList.className = state.results.length ? 'results-list' : 'results-list empty-state';
   elements.resultsList.innerHTML = state.results.length ? state.results.map(resultCard).join('') : 'No analysis yet.';
 }
@@ -241,9 +245,9 @@ function clusterTitleFor(item) {
   const text = item.originalPost.toLowerCase();
   const reasons = (item.reasons || []).join(' ').toLowerCase();
   if (item.decision === 'discard') return 'Likely noise';
+  if (item.type === 'login failure') return 'Login failures';
   if (item.type === 'pricing complaint') return 'Pricing transparency';
   if (item.type === 'onboarding complaint' || reasons.includes('onboarding')) return 'Onboarding confusion';
-  if (text.includes('login') || text.includes('ログイン') || text.includes('sign in')) return 'Login failures';
   if (text.includes('export') || text.includes('markdown') || text.includes('json') || text.includes('エクスポート')) return 'Export guidance';
   if (item.type === 'docs complaint') return 'Documentation gaps';
   if (text.includes('slow') || text.includes('重い') || text.includes('遅い')) return 'Performance complaints';
@@ -296,6 +300,128 @@ function getIssueClusters() {
 
 function getPriorityRanking() {
   return [...getIssueClusters()].sort((a, b) => b.priorityScore - a.priorityScore || b.frequency - a.frequency);
+}
+
+function generatePRSpec(cluster) {
+  if (!cluster) return null;
+
+  const acceptanceCriteriaMap = {
+    'Onboarding confusion': [
+      'Add onboarding help panel',
+      'Add example feedback input',
+      'Add first-run instructions'
+    ],
+    'Login failures': [
+      'Improve login error messaging',
+      'Add recovery guidance',
+      'Verify login flow'
+    ],
+    'Bug reports': [
+      'Reproduce issue',
+      'Add regression protection',
+      'Verify affected flow'
+    ],
+    'Pricing transparency': [
+      'Clarify pricing information',
+      'Clarify cancellation flow',
+      'Clarify refund process'
+    ],
+    'UX complaints': [
+      'Simplify the confusing step',
+      'Clarify labels',
+      'Add inline guidance'
+    ],
+    'Performance complaints': [
+      'Identify performance bottleneck',
+      'Optimize critical path',
+      'Verify latency improvement'
+    ],
+    'Documentation gaps': [
+      'Improve missing docs section',
+      'Add concrete usage example',
+      'Verify docs clarity'
+    ],
+    'Feature requests': [
+      'Implement smallest useful version of feature',
+      'Document feature usage',
+      'Verify feature functionality'
+    ],
+    'Export guidance': [
+      'Clarify export formats',
+      'Add export instructions',
+      'Verify export contents'
+    ]
+  };
+
+  const type = cluster.title;
+  const ac = acceptanceCriteriaMap[type] || ['Reproduce the reported issue', 'Implement a focused fix', 'Verify the fix with manual testing'];
+
+  let suggestedFiles = ['app.js'];
+  if (['UX complaints', 'Onboarding confusion', 'Performance complaints'].includes(type)) {
+    suggestedFiles = ['index.html', 'app.js', 'style.css'];
+  } else if (type === 'Documentation gaps') {
+    suggestedFiles = ['index.html'];
+  }
+
+  const riskLevel = (type === 'Bug reports' || type === 'Login failures') ? 'high' : (['UX complaints', 'Onboarding confusion', 'Performance complaints'].includes(type) ? 'medium' : 'low');
+
+  let effort = 'small';
+  if (cluster.severity === 'high' || cluster.frequency > 5) effort = 'large';
+  else if (cluster.severity === 'medium' || cluster.frequency > 2) effort = 'medium';
+
+  return {
+    problem: type,
+    evidenceSummary: cluster.representativeExample,
+    frequency: cluster.frequency,
+    severity: cluster.severity,
+    actionability: cluster.actionability,
+    acceptanceCriteria: ac,
+    suggestedFiles,
+    riskLevel,
+    estimatedEffort: effort,
+    manualVerificationSteps: [
+      'Load the application in a local browser',
+      `Perform the steps to trigger the ${type} scenario`,
+      'Confirm the fix behaves as expected according to acceptance criteria'
+    ]
+  };
+}
+
+function buildPRSpecMarkdown(spec) {
+  if (!spec) return '';
+  return `### PR Spec: ${spec.problem}
+
+**Problem:** ${spec.problem}
+**Evidence summary:** ${spec.evidenceSummary}
+**Frequency:** ${spec.frequency}
+**Severity:** ${spec.severity}
+**Actionability:** ${spec.actionability}
+
+**Acceptance Criteria:**
+${spec.acceptanceCriteria.map(line => `- ${line}`).join('\n')}
+
+**Suggested Files:**
+${spec.suggestedFiles.map(file => `- ${file}`).join('\n')}
+
+**Risk Level:** ${spec.riskLevel}
+**Estimated Effort:** ${spec.estimatedEffort}
+
+**Manual Verification Steps:**
+${spec.manualVerificationSteps.map(line => `- ${line}`).join('\n')}`;
+}
+
+function renderPRSpec() {
+  const topCluster = getPriorityRanking()[0];
+  const spec = generatePRSpec(topCluster);
+  if (!spec) return 'No PR spec generated.';
+
+  return `<div class="pr-spec-heading">
+      <h3>PR Spec (Highest Priority)</h3>
+      <button id="copyPrSpecBtn" class="primary" type="button">Copy PR Spec</button>
+    </div>
+    <div class="pr-spec-body">
+      <pre id="prSpecOutput">${escapeHtml(buildPRSpecMarkdown(spec))}</pre>
+    </div>`;
 }
 
 function renderPriorityRanking() {
@@ -442,10 +568,12 @@ function downloadFile(filename, type, content) {
 }
 
 function markdownExport() {
-  const priorities = getPriorityRanking().slice(0, 3).map((cluster, index) => `${index + 1}. **${cluster.title}** — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}\n   - Representative example: ${cluster.representativeExample}`).join('\n');
+  const ranking = getPriorityRanking();
+  const priorities = ranking.slice(0, 3).map((cluster, index) => `${index + 1}. **${cluster.title}** — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}\n   - Representative example: ${cluster.representativeExample}`).join('\n');
   const clusters = getIssueClusters().map((cluster) => `- **${cluster.title}** — frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}\n  - Representative example: ${cluster.representativeExample}`).join('\n');
   const rows = state.results.map((item) => `- **${item.decision} / ${item.type} / ${item.severity}** — ${item.extractedProblem}\n  - Actionability: ${item.actionability}\n  - Evidence: ${item.evidenceLevel}\n  - Why classified this way: ${(item.reasons || []).join(', ')}\n  - Suggested fix: ${item.suggestedFix}\n  - Original: ${item.originalPost}`).join('\n');
-  return `# Signal-to-Fix Analysis\n\n## Priority Ranking\n\n${priorities || 'No priorities yet.'}\n\n## Issue Clusters\n\n${clusters || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
+  const prSpec = buildPRSpecMarkdown(generatePRSpec(ranking[0]));
+  return `# Signal-to-Fix Analysis\n\n## Priority Ranking\n\n${priorities || 'No priorities yet.'}\n\n## PR Spec\n\n${prSpec || 'No PR Spec generated.'}\n\n## Issue Clusters\n\n${clusters || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
 }
 
 async function copyPrompt() {
@@ -508,8 +636,35 @@ elements.loadSampleBtn.addEventListener('click', loadSampleFeedback);
 elements.copyPromptBtn.addEventListener('click', copyPrompt);
 elements.copyPromptInlineBtn.addEventListener('click', copyPrompt);
 elements.exportMdBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.md`, 'text/markdown', markdownExport()));
-elements.exportJsonBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({ context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value }, priorityRanking: getPriorityRanking(), issueClusters: getIssueClusters(), results: state.results, codexPrompt: state.prompt || buildCodexPrompt() }, null, 2)));
+elements.exportJsonBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({ context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value }, priorityRanking: getPriorityRanking(), prSpec: generatePRSpec(getPriorityRanking()[0]), issueClusters: getIssueClusters(), results: state.results, codexPrompt: state.prompt || buildCodexPrompt() }, null, 2)));
 elements.clearBtn.addEventListener('click', clearAll);
+elements.prSpecSection.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'copyPrSpecBtn') {
+    copyPrSpec();
+  }
+});
 [elements.productName, elements.productUrl, elements.targetArea, elements.feedbackInput].forEach((input) => input.addEventListener('input', saveState));
+
+async function copyPrSpec() {
+  const output = document.getElementById('prSpecOutput');
+  if (!output) return;
+  const text = output.textContent;
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    elements.statusMessage.textContent = 'PR Spec copied to clipboard.';
+  } catch (error) {
+    elements.statusMessage.textContent = 'Copy failed.';
+  }
+}
 
 loadState();
