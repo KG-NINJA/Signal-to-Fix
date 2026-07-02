@@ -31,6 +31,10 @@ const RULES = {
   // Classification keywords. First strong match wins, then fallback scoring is used.
   types: {
     bug: ['bug', 'broken', 'crash', 'error', 'failed', 'stuck', 'does not work', 'crashes', 'エラー', '壊れた', '落ちる', '開かない', 'ログインできない', 'バグ'],
+    'pricing complaint': ['expensive', 'price', 'pricing', 'billing', 'refund', 'cancel', '課金', '高い', '解約', '返金'],
+    'onboarding complaint': ONBOARDING_HELP_TERMS,
+    'UX complaint': ['confusing', 'hard to use', 'slow', '使いにくい', 'わかりにくい', '重い', '遅い', 'annoying', 'clunky', 'too many steps'],
+    'feature request': ['missing', 'please add', 'need', 'wish', 'feature request', '追加してほしい', '対応してほしい', 'support'],
     'onboarding complaint': ONBOARDING_HELP_TERMS,
     'UX complaint': ['confusing', 'hard to use', 'slow', '使いにくい', 'わかりにくい', '重い', '遅い', 'annoying', 'clunky', 'too many steps'],
     'feature request': ['missing', 'please add', 'need', 'wish', 'feature request', '追加してほしい', '対応してほしい', 'support'],
@@ -66,6 +70,7 @@ const elements = {
   clearBtn: $('clearBtn'),
   statusMessage: $('statusMessage'),
   resultsSummary: $('resultsSummary'),
+  issueClusters: $('issueClusters'),
   resultsList: $('resultsList'),
   summaryText: $('summaryText'),
   promptOutput: $('promptOutput')
@@ -220,8 +225,65 @@ function render() {
   elements.promptOutput.value = state.prompt || '';
   elements.resultsSummary.className = state.results.length ? 'results-summary' : 'results-summary empty-state';
   elements.resultsSummary.innerHTML = state.results.length ? resultSummaryCard(kept, reduced, discarded) : 'Run analysis to see a short workflow summary.';
+  elements.issueClusters.className = state.results.length ? 'issue-clusters' : 'issue-clusters empty-state';
+  elements.issueClusters.innerHTML = state.results.length ? renderIssueClusters() : 'Issue clusters will appear after analysis.';
   elements.resultsList.className = state.results.length ? 'results-list' : 'results-list empty-state';
   elements.resultsList.innerHTML = state.results.length ? state.results.map(resultCard).join('') : 'No analysis yet.';
+}
+
+
+function clusterTitleFor(item) {
+  const text = item.originalPost.toLowerCase();
+  const reasons = (item.reasons || []).join(' ').toLowerCase();
+  if (item.decision === 'discard') return 'Likely noise';
+  if (item.type === 'pricing complaint') return 'Pricing transparency';
+  if (item.type === 'onboarding complaint' || reasons.includes('onboarding')) return 'Onboarding confusion';
+  if (text.includes('login') || text.includes('ログイン') || text.includes('sign in')) return 'Login failures';
+  if (text.includes('export') || text.includes('markdown') || text.includes('json') || text.includes('エクスポート')) return 'Export guidance';
+  if (item.type === 'docs complaint') return 'Documentation gaps';
+  if (text.includes('slow') || text.includes('重い') || text.includes('遅い')) return 'Performance complaints';
+  if (item.type === 'bug') return 'Bug reports';
+  if (item.type === 'feature request') return 'Feature requests';
+  if (item.type === 'UX complaint') return 'UX complaints';
+  if (item.type === 'praise') return 'Praise';
+  return 'Other feedback';
+}
+
+function highestLevel(items, field, order) {
+  return items.map((item) => item[field]).sort((a, b) => order[b] - order[a])[0] || 'low';
+}
+
+function getIssueClusters() {
+  const groups = state.results.reduce((acc, item) => {
+    const title = clusterTitleFor(item);
+    acc[title] = acc[title] || [];
+    acc[title].push(item);
+    return acc;
+  }, {});
+  const severityOrder = { high: 3, medium: 2, low: 1 };
+  const actionabilityOrder = { high: 3, medium: 2, low: 1 };
+
+  return Object.entries(groups)
+    .map(([title, items]) => ({
+      title,
+      frequency: items.length,
+      representativeExample: items.find((item) => item.decision === 'keep')?.originalPost || items[0].originalPost,
+      severity: highestLevel(items, 'severity', severityOrder),
+      actionability: highestLevel(items, 'actionability', actionabilityOrder)
+    }))
+    .sort((a, b) => b.frequency - a.frequency || actionabilityOrder[b.actionability] - actionabilityOrder[a.actionability]);
+}
+
+function renderIssueClusters() {
+  const clusters = getIssueClusters();
+  if (!clusters.length) return 'No issue clusters yet.';
+  return `<div class="cluster-heading"><h3>Issue clusters</h3><p>Repeated problems are grouped so you can prioritize the most common themes.</p></div>
+    <div class="cluster-grid">${clusters.map((cluster) => `<article class="cluster-card">
+      <div class="cluster-title">${escapeHtml(cluster.title)}</div>
+      <div class="cluster-frequency">frequency: <strong>${cluster.frequency}</strong></div>
+      <div class="cluster-meta">severity: ${escapeHtml(cluster.severity)} · actionability: ${escapeHtml(cluster.actionability)}</div>
+      <div class="cluster-example"><strong>Representative example</strong>${escapeHtml(previewText(cluster.representativeExample, 220))}</div>
+    </article>`).join('')}</div>`;
 }
 
 function resultSummaryCard(kept, reduced, discarded) {
@@ -341,8 +403,9 @@ function downloadFile(filename, type, content) {
 }
 
 function markdownExport() {
+  const clusters = getIssueClusters().map((cluster) => `- **${cluster.title}** — frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}\n  - Representative example: ${cluster.representativeExample}`).join('\n');
   const rows = state.results.map((item) => `- **${item.decision} / ${item.type} / ${item.severity}** — ${item.extractedProblem}\n  - Actionability: ${item.actionability}\n  - Evidence: ${item.evidenceLevel}\n  - Why classified this way: ${(item.reasons || []).join(', ')}\n  - Suggested fix: ${item.suggestedFix}\n  - Original: ${item.originalPost}`).join('\n');
-  return `# Signal-to-Fix Analysis\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
+  return `# Signal-to-Fix Analysis\n\n## Issue Clusters\n\n${clusters || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
 }
 
 async function copyPrompt() {
@@ -405,7 +468,7 @@ elements.loadSampleBtn.addEventListener('click', loadSampleFeedback);
 elements.copyPromptBtn.addEventListener('click', copyPrompt);
 elements.copyPromptInlineBtn.addEventListener('click', copyPrompt);
 elements.exportMdBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.md`, 'text/markdown', markdownExport()));
-elements.exportJsonBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({ context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value }, results: state.results, codexPrompt: state.prompt || buildCodexPrompt() }, null, 2)));
+elements.exportJsonBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({ context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value }, issueClusters: getIssueClusters(), results: state.results, codexPrompt: state.prompt || buildCodexPrompt() }, null, 2)));
 elements.clearBtn.addEventListener('click', clearAll);
 [elements.productName, elements.productUrl, elements.targetArea, elements.feedbackInput].forEach((input) => input.addEventListener('input', saveState));
 
