@@ -140,15 +140,9 @@ function analyzePost(post, index) {
   const hasProductSignal = getProductNameSignal(text);
   const evidence = evidenceLevel(text);
 
-  const engagementBaitTerms = ['thoughts?', 'agree?', 'bookmark this', 'follow for more', 'retweet to win', 'must read', 'hot take'];
-  const noiseKeywords = ['airdrop', 'giveaway', 'promo', '100x', 'wagmi', 'referral', 'claim reward', 'free money'];
-
-  const hasEngagementBait = includesAny(text, engagementBaitTerms);
-  const hasNoiseKeywords = includesAny(text, noiseKeywords);
-  const isNoiseOverride = hasNoiseKeywords ||
+  const isNoiseOverride = includesAny(text, RULES.noise) ||
                            hasExcessiveHashtags(post) ||
-                           hasExcessiveEmojis(post) ||
-                           hasEngagementBait;
+                           hasExcessiveEmojis(post);
 
   let decision, type;
   if (isNoiseOverride) {
@@ -589,6 +583,7 @@ function saveState() {
       targetArea: elements.targetArea.value,
       feedback: elements.feedbackInput.value,
       results: state.results,
+      clusters: state.clusters,
       ranking: state.ranking,
       prompt: state.prompt
     }));
@@ -605,6 +600,7 @@ function loadState() {
     elements.targetArea.value = saved.targetArea || '';
     elements.feedbackInput.value = saved.feedback || '';
     state.results = Array.isArray(saved.results) ? saved.results : [];
+    state.clusters = Array.isArray(saved.clusters) ? saved.clusters : [];
     state.ranking = Array.isArray(saved.ranking) ? saved.ranking : [];
     state.prompt = saved.prompt || '';
   } catch (error) {
