@@ -35,6 +35,10 @@ const RULES = {
     'onboarding complaint': ONBOARDING_HELP_TERMS,
     'UX complaint': ['confusing', 'hard to use', 'slow', '使いにくい', 'わかりにくい', '重い', '遅い', 'annoying', 'clunky', 'too many steps'],
     'feature request': ['missing', 'please add', 'need', 'wish', 'feature request', '追加してほしい', '対応してほしい', 'support'],
+    'onboarding complaint': ONBOARDING_HELP_TERMS,
+    'UX complaint': ['confusing', 'hard to use', 'slow', '使いにくい', 'わかりにくい', '重い', '遅い', 'annoying', 'clunky', 'too many steps'],
+    'feature request': ['missing', 'please add', 'need', 'wish', 'feature request', '追加してほしい', '対応してほしい', 'support'],
+    'pricing complaint': ['expensive', 'price', 'pricing', 'billing', 'refund', 'cancel', '課金', '高い', '解約', '返金'],
     'docs complaint': ['docs', 'documentation', 'guide', 'tutorial', 'api reference', 'example'],
     praise: ['love', 'great', 'awesome', 'thanks', 'amazing', '便利', '最高'],
     noise: []
