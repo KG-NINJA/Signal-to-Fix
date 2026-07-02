@@ -70,6 +70,7 @@ const elements = {
   clearBtn: $('clearBtn'),
   statusMessage: $('statusMessage'),
   resultsSummary: $('resultsSummary'),
+  priorityRanking: $('priorityRanking'),
   issueClusters: $('issueClusters'),
   resultsList: $('resultsList'),
   summaryText: $('summaryText'),
@@ -203,11 +204,15 @@ function buildCodexPrompt() {
   const productUrl = elements.productUrl.value.trim() || '[product URL]';
   const targetArea = elements.targetArea.value.trim() || '[target area]';
   const useful = usefulResults().sort((a, b) => scoreResult(b) - scoreResult(a)).slice(0, 8);
+  const ranking = getPriorityRanking();
+  const topPriorities = ranking.slice(0, 3).map((cluster, index) => `${index + 1}. ${cluster.title} — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}; evidence: ${cluster.evidenceLevel}
+   Representative example: ${cluster.representativeExample}`).join('\n') || '1. No clustered priority yet; do not invent work without stronger evidence.';
+  const topCluster = ranking[0];
   const evidence = useful.length ? useful.map((item) => `- ${item.evidenceLevel}: ${item.originalPost}`).join('\n') : '- No concrete evidence captured yet.';
   const issues = useful.length ? useful.slice(0, 5).map((item, i) => `${i + 1}. ${item.extractedProblem}\n   - Type: ${item.type}\n   - Severity: ${item.severity}\n   - Actionability: ${item.actionability}\n   - Evidence level: ${item.evidenceLevel}\n   - Why classified this way: ${(item.reasons || ['no reason saved']).join(', ')}\n   - Suggested fix: ${item.suggestedFix}`).join('\n') : '1. No prioritized issue yet; do not invent work without stronger evidence.';
-  const firstPass = useful.length ? useful.slice(0, 3).map((item) => `- ${item.suggestedFix}`).join('\n') : '- Ask for more concrete feedback or reproduce the issue manually before changing product code.';
+  const firstPass = topCluster ? `- Default first PR: address ${topCluster.title}.\n- Use this representative example as acceptance context: ${topCluster.representativeExample}` : '- Ask for more concrete feedback or reproduce the issue manually before changing product code.';
 
-  return `Title:\nImprove ${productName} based on X/Twitter feedback\n\nContext:\n- Product: ${productName}\n- Product URL: ${productUrl}\n- Target area: ${targetArea}\n\nEvidence:\n${evidence}\n\nPrioritized issues:\n${issues}\n\nRecommended small first pass:\n${firstPass}\n- Keep changes small, focused, and easy to review.\n- Prefer the highest-actionability issue if time is limited.\n\nNon-goals:\n- Do not redesign the entire app.\n- Do not add APIs, authentication, databases, or new dependencies.\n- Do not use the GitHub API unless it is already configured in this repository.\n- Do not overbuild beyond the evidence above.\n\nScreenshot instruction:\n- If browser/computer-use is available, capture before/after screenshots for the changed flow or UI.\n- If screenshots are not possible, explain why and include a concise manual verification note.\n\nCompatibility:\n- Keep the app stable and GitHub Pages compatible.`;
+  return `Title:\nImprove ${productName} based on X/Twitter feedback\n\nContext:\n- Product: ${productName}\n- Product URL: ${productUrl}\n- Target area: ${targetArea}\n\nEvidence:\n${evidence}\n\nTop priorities:\n${topPriorities}\n\nPrioritized issues:\n${issues}\n\nRecommended small first pass:\n${firstPass}\n- Keep changes small, focused, and easy to review.\n- Prefer the highest-ranked cluster if time is limited.\n\nNon-goals:\n- Do not redesign the entire app.\n- Do not add APIs, authentication, databases, or new dependencies.\n- Do not use the GitHub API unless it is already configured in this repository.\n- Do not overbuild beyond the evidence above.\n\nScreenshot instruction:\n- If browser/computer-use is available, capture before/after screenshots for the changed flow or UI.\n- If screenshots are not possible, explain why and include a concise manual verification note.\n\nCompatibility:\n- Keep the app stable and GitHub Pages compatible.`;
 }
 
 function scoreResult(item) {
@@ -225,6 +230,8 @@ function render() {
   elements.promptOutput.value = state.prompt || '';
   elements.resultsSummary.className = state.results.length ? 'results-summary' : 'results-summary empty-state';
   elements.resultsSummary.innerHTML = state.results.length ? resultSummaryCard(kept, reduced, discarded) : 'Run analysis to see a short workflow summary.';
+  elements.priorityRanking.className = state.results.length ? 'priority-ranking' : 'priority-ranking empty-state';
+  elements.priorityRanking.innerHTML = state.results.length ? renderPriorityRanking() : 'Priority ranking will appear after analysis.';
   elements.issueClusters.className = state.results.length ? 'issue-clusters' : 'issue-clusters empty-state';
   elements.issueClusters.innerHTML = state.results.length ? renderIssueClusters() : 'Issue clusters will appear after analysis.';
   elements.resultsList.className = state.results.length ? 'results-list' : 'results-list empty-state';
@@ -253,6 +260,16 @@ function highestLevel(items, field, order) {
   return items.map((item) => item[field]).sort((a, b) => order[b] - order[a])[0] || 'low';
 }
 
+function evidenceWeight(level) {
+  if (['multiple-user pattern', 'screenshot-backed', 'reproducible issue'].includes(level)) return 3;
+  if (level === 'concrete complaint') return 2;
+  return 1;
+}
+
+function highestEvidenceLevel(items) {
+  return items.map((item) => item.evidenceLevel).sort((a, b) => evidenceWeight(b) - evidenceWeight(a))[0] || 'vague opinion';
+}
+
 function getIssueClusters() {
   const groups = state.results.reduce((acc, item) => {
     const title = clusterTitleFor(item);
@@ -269,10 +286,34 @@ function getIssueClusters() {
       frequency: items.length,
       representativeExample: items.find((item) => item.decision === 'keep')?.originalPost || items[0].originalPost,
       severity: highestLevel(items, 'severity', severityOrder),
-      actionability: highestLevel(items, 'actionability', actionabilityOrder)
+      actionability: highestLevel(items, 'actionability', actionabilityOrder),
+      evidenceLevel: highestEvidenceLevel(items)
+    }))
+    .map((cluster) => ({
+      ...cluster,
+      priorityScore: (cluster.frequency * 3) + severityOrder[cluster.severity] + actionabilityOrder[cluster.actionability] + evidenceWeight(cluster.evidenceLevel)
     }))
     .sort((a, b) => b.frequency - a.frequency || actionabilityOrder[b.actionability] - actionabilityOrder[a.actionability]);
 }
+
+function getPriorityRanking() {
+  return [...getIssueClusters()].sort((a, b) => b.priorityScore - a.priorityScore || b.frequency - a.frequency);
+}
+
+function renderPriorityRanking() {
+  const ranking = getPriorityRanking();
+  if (!ranking.length) return 'No priority ranking yet.';
+  return `<div class="priority-heading"><h3>Priority Ranking</h3><p>Score = (frequency × 3) + severity + actionability + evidence.</p></div>
+    <div class="priority-list">${ranking.map((cluster, index) => `<article class="priority-card">
+      <div class="priority-rank">#${index + 1}</div>
+      <div class="priority-body">
+        <div class="priority-title">${escapeHtml(cluster.title)}</div>
+        <div class="priority-meta">score: <strong>${cluster.priorityScore}</strong> · frequency: ${cluster.frequency}</div>
+        <div class="priority-example"><strong>Representative example</strong>${escapeHtml(previewText(cluster.representativeExample, 220))}</div>
+      </div>
+    </article>`).join('')}</div>`;
+}
+
 
 function renderIssueClusters() {
   const clusters = getIssueClusters();
@@ -281,7 +322,7 @@ function renderIssueClusters() {
     <div class="cluster-grid">${clusters.map((cluster) => `<article class="cluster-card">
       <div class="cluster-title">${escapeHtml(cluster.title)}</div>
       <div class="cluster-frequency">frequency: <strong>${cluster.frequency}</strong></div>
-      <div class="cluster-meta">severity: ${escapeHtml(cluster.severity)} · actionability: ${escapeHtml(cluster.actionability)}</div>
+      <div class="cluster-meta">severity: ${escapeHtml(cluster.severity)} · actionability: ${escapeHtml(cluster.actionability)} · evidence: ${escapeHtml(cluster.evidenceLevel)}</div>
       <div class="cluster-example"><strong>Representative example</strong>${escapeHtml(previewText(cluster.representativeExample, 220))}</div>
     </article>`).join('')}</div>`;
 }
@@ -403,9 +444,10 @@ function downloadFile(filename, type, content) {
 }
 
 function markdownExport() {
+  const priorities = getPriorityRanking().slice(0, 3).map((cluster, index) => `${index + 1}. **${cluster.title}** — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}\n   - Representative example: ${cluster.representativeExample}`).join('\n');
   const clusters = getIssueClusters().map((cluster) => `- **${cluster.title}** — frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}\n  - Representative example: ${cluster.representativeExample}`).join('\n');
   const rows = state.results.map((item) => `- **${item.decision} / ${item.type} / ${item.severity}** — ${item.extractedProblem}\n  - Actionability: ${item.actionability}\n  - Evidence: ${item.evidenceLevel}\n  - Why classified this way: ${(item.reasons || []).join(', ')}\n  - Suggested fix: ${item.suggestedFix}\n  - Original: ${item.originalPost}`).join('\n');
-  return `# Signal-to-Fix Analysis\n\n## Issue Clusters\n\n${clusters || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
+  return `# Signal-to-Fix Analysis\n\n## Priority Ranking\n\n${priorities || 'No priorities yet.'}\n\n## Issue Clusters\n\n${clusters || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
 }
 
 async function copyPrompt() {
@@ -468,7 +510,7 @@ elements.loadSampleBtn.addEventListener('click', loadSampleFeedback);
 elements.copyPromptBtn.addEventListener('click', copyPrompt);
 elements.copyPromptInlineBtn.addEventListener('click', copyPrompt);
 elements.exportMdBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.md`, 'text/markdown', markdownExport()));
-elements.exportJsonBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({ context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value }, issueClusters: getIssueClusters(), results: state.results, codexPrompt: state.prompt || buildCodexPrompt() }, null, 2)));
+elements.exportJsonBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({ context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value }, priorityRanking: getPriorityRanking(), issueClusters: getIssueClusters(), results: state.results, codexPrompt: state.prompt || buildCodexPrompt() }, null, 2)));
 elements.clearBtn.addEventListener('click', clearAll);
 [elements.productName, elements.productUrl, elements.targetArea, elements.feedbackInput].forEach((input) => input.addEventListener('input', saveState));
 
