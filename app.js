@@ -141,8 +141,11 @@ function analyzePost(post, index) {
   const evidence = evidenceLevel(text);
 
   const engagementBaitTerms = ['thoughts?', 'agree?', 'bookmark this', 'follow for more', 'retweet to win'];
+  const noiseKeywords = ['airdrop', 'giveaway', 'promo', '100x', 'wagmi', 'claim reward', 'referral', 'free money'];
+
   const hasEngagementBait = includesAny(text, engagementBaitTerms);
-  const hasExcessiveNoise = includesAny(text, ['airdrop', 'giveaway', 'promo', '100x', 'wagmi']) ||
+  const hasNoiseKeywords = includesAny(text, noiseKeywords);
+  const hasExcessiveNoise = hasNoiseKeywords ||
                            hasExcessiveHashtags(post) ||
                            hasExcessiveEmojis(post) ||
                            hasEngagementBait;
@@ -329,20 +332,25 @@ function generatePRSpec(cluster) {
 
   // Dynamic Acceptance Criteria
   const ac = [];
-  if (example.includes('confusing')) ac.push(`Clarify the ${type.toLowerCase()} flow to reduce confusion`);
-  if (example.includes('hard to use')) ac.push(`Simplify the ${type.toLowerCase()} interactions for better usability`);
-  if (example.includes('slow') || example.includes('lag')) ac.push(`Optimize the ${type.toLowerCase()} performance`);
-  if (example.includes('broken') || example.includes('bug') || example.includes('error')) ac.push(`Fix the reported ${type.toLowerCase()} issue`);
-  if (example.includes('missing') || example.includes('add')) ac.push(`Add the requested ${type.toLowerCase()} functionality`);
+  if (example.includes('confusing')) ac.push(`Rewrite labels and instructions in the ${type.toLowerCase()} section to use clearer language`);
+  if (example.includes('hard to use')) ac.push(`Reduce number of clicks required for common tasks in the ${type.toLowerCase()} flow`);
+  if (example.includes('slow') || example.includes('lag') || example.includes('heavy')) ac.push(`Ensure the ${type.toLowerCase()} UI responds in under 200ms during normal interaction`);
+  if (example.includes('broken') || example.includes('bug') || example.includes('error')) ac.push(`Ensure the system correctly handles the reported ${type.toLowerCase()} failure state without crashing`);
+  if (example.includes('missing') || example.includes('add')) ac.push(`Implement a minimal version of the ${type.toLowerCase()} feature that fulfills the primary user need`);
+  if (example.includes('ios')) ac.push('Verify the fix works on iOS Safari and Chrome mobile');
+  if (example.includes('android')) ac.push('Verify the fix works on Android Chrome mobile');
+  if (example.includes('crash')) ac.push('Verify no application crash occurs when the reported trigger path is executed');
 
   // Specific requirements from example
-  if (example.includes('import')) ac.push('Explain next step after import');
-  if (example.includes('analyze')) ac.push('Highlight Analyze Feedback button');
-  if (example.includes('export')) ac.push('Clarify export options and success state');
-  if (example.includes('login') || example.includes('sign in')) ac.push('Improve login error messaging and recovery path');
+  if (example.includes('import')) ac.push('Show a clear "next step" instruction immediately after feedback import');
+  if (example.includes('analyze')) ac.push('Add a visual highlight or tooltip to the Analyze button when feedback is ready');
+  if (example.includes('export')) ac.push('Show a confirmation message and the file name after a successful export');
+  if (example.includes('login') || example.includes('sign in')) ac.push('Display a specific error message and a "forgot password" link when login fails');
 
-  if (ac.length === 0) ac.push(`Address the core issue: "${cluster.representativeExample.slice(0, 50)}..."`);
-  ac.push(`Ensure ${type} satisfies basic requirements and handles edge cases`);
+  if (ac.length === 0) {
+    const snippet = cluster.representativeExample.slice(0, 80).replace(/\n/g, ' ');
+    ac.push(`Implement a solution that specifically resolves this reported problem: "${snippet}..."`);
+  }
 
   // Dynamic Suggested Files
   const suggestedFiles = [];
