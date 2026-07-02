@@ -51,12 +51,10 @@ const elements = {
   analyzeBtn: $('analyzeBtn'),
   loadSampleBtn: $('loadSampleBtn'),
   copyPromptBtn: $('copyPromptBtn'),
-  copyPromptInlineBtn: $('copyPromptInlineBtn'),
   exportMdBtn: $('exportMdBtn'),
   exportJsonBtn: $('exportJsonBtn'),
   clearBtn: $('clearBtn'),
   statusMessage: $('statusMessage'),
-  resultsSummary: $('resultsSummary'),
   resultsList: $('resultsList'),
   summaryText: $('summaryText'),
   promptOutput: $('promptOutput')
@@ -207,46 +205,8 @@ function render() {
   const discarded = state.results.filter((r) => r.decision === 'discard').length;
   elements.summaryText.textContent = state.results.length ? `${kept} keep, ${reduced} reduce, ${discarded} discard.` : 'Analyze feedback to see kept, reduced, and discarded posts.';
   elements.promptOutput.value = state.prompt || '';
-  elements.resultsSummary.className = state.results.length ? 'results-summary' : 'results-summary empty-state';
-  elements.resultsSummary.innerHTML = state.results.length ? resultSummaryCard(kept, reduced, discarded) : 'Run analysis to see a short workflow summary.';
   elements.resultsList.className = state.results.length ? 'results-list' : 'results-list empty-state';
   elements.resultsList.innerHTML = state.results.length ? state.results.map(resultCard).join('') : 'No analysis yet.';
-}
-
-function resultSummaryCard(kept, reduced, discarded) {
-  const total = state.results.length;
-  const topType = getTopIssueType();
-  const targetArea = elements.targetArea.value.trim() || 'the highest-signal area';
-  const usefulLabel = kept === 1 ? 'useful signal' : 'useful signals';
-  const weakCount = reduced;
-  const weakLabel = weakCount === 1 ? 'weak/noisy signal' : 'weak/noisy signals';
-  const discardLabel = discarded === 1 ? 'discarded item' : 'discarded items';
-  return `<div class="summary-grid">
-    <div><span class="summary-number">${total}</span><span class="summary-label">posts analyzed</span></div>
-    <div><span class="summary-number keep-text">${kept}</span><span class="summary-label">keep</span></div>
-    <div><span class="summary-number reduce-text">${reduced}</span><span class="summary-label">reduce</span></div>
-    <div><span class="summary-number discard-text">${discarded}</span><span class="summary-label">discard</span></div>
-  </div>
-  <p class="summary-sentence">${total} posts analyzed. ${kept} ${usefulLabel}, ${weakCount} ${weakLabel}, ${discarded} ${discardLabel}. Top issue type: <strong>${escapeHtml(topType)}</strong>. Next: copy the Codex prompt and ask Codex to improve ${escapeHtml(targetArea)}.</p>`;
-}
-
-function getTopIssueType() {
-  const counts = state.results
-    .filter((item) => item.decision !== 'discard' && item.type !== 'noise' && item.type !== 'praise')
-    .reduce((acc, item) => {
-      acc[item.type] = (acc[item.type] || 0) + 1;
-      return acc;
-    }, {});
-  const [topType] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || ['No product issue yet'];
-  return topType;
-}
-
-function decisionExplanation(decision) {
-  return {
-    keep: 'useful signal',
-    reduce: 'weak or noisy but possibly useful',
-    discard: 'likely noise'
-  }[decision] || 'needs review';
 }
 
 function previewText(value, limit = ORIGINAL_PREVIEW_LIMIT) {
@@ -255,25 +215,20 @@ function previewText(value, limit = ORIGINAL_PREVIEW_LIMIT) {
 }
 
 function resultCard(item) {
-  return `<article class="result-card ${item.decision}">
+  return `<article class="result-card">
     <div class="result-top">
-      <span class="badge ${item.decision}">${escapeHtml(item.decision)} = ${escapeHtml(decisionExplanation(item.decision))}</span>
-      <span class="badge type-badge">${escapeHtml(item.type)}</span>
+      <span class="badge ${item.decision}">${escapeHtml(item.decision)}</span>
+      <span class="badge">${escapeHtml(item.type)}</span>
+      <span class="badge">severity: ${escapeHtml(item.severity)}</span>
+      <span class="badge">actionability: ${escapeHtml(item.actionability)}</span>
+      <span class="badge">${escapeHtml(item.evidenceLevel)}</span>
     </div>
-    <div class="result-main">
-      <div class="result-field problem"><strong>Extracted problem</strong>${escapeHtml(item.extractedProblem)}</div>
-      <div class="result-field fix"><strong>Suggested fix</strong>${escapeHtml(item.suggestedFix)}</div>
+    <div class="result-grid">
+      <div class="result-field"><strong>Extracted problem</strong>${escapeHtml(item.extractedProblem)}</div>
+      <div class="result-field"><strong>Suggested fix</strong>${escapeHtml(item.suggestedFix)}</div>
+      <div class="result-field original"><strong>Why classified this way</strong>${escapeHtml((item.reasons || []).join(', '))}</div>
+      <div class="result-field original"><strong>Original post</strong>${escapeHtml(previewText(item.originalPost))}</div>
     </div>
-    <details class="result-details">
-      <summary>Show labels and original post</summary>
-      <div class="result-grid">
-        <div class="result-field"><strong>Severity</strong>${escapeHtml(item.severity)}</div>
-        <div class="result-field"><strong>Actionability</strong>${escapeHtml(item.actionability)}</div>
-        <div class="result-field"><strong>Evidence level</strong>${escapeHtml(item.evidenceLevel)}</div>
-        <div class="result-field"><strong>Why classified this way</strong>${escapeHtml((item.reasons || []).join(', '))}</div>
-        <div class="result-field original"><strong>Original post</strong>${escapeHtml(previewText(item.originalPost))}</div>
-      </div>
-    </details>
   </article>`;
 }
 
@@ -392,7 +347,6 @@ function clearAll() {
 elements.analyzeBtn.addEventListener('click', analyzeFeedback);
 elements.loadSampleBtn.addEventListener('click', loadSampleFeedback);
 elements.copyPromptBtn.addEventListener('click', copyPrompt);
-elements.copyPromptInlineBtn.addEventListener('click', copyPrompt);
 elements.exportMdBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.md`, 'text/markdown', markdownExport()));
 elements.exportJsonBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({ context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value }, results: state.results, codexPrompt: state.prompt || buildCodexPrompt() }, null, 2)));
 elements.clearBtn.addEventListener('click', clearAll);

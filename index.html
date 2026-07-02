@@ -70,19 +70,15 @@
           <h2 id="summaryTitle">Results</h2>
           <p id="summaryText">Analyze feedback to see kept, reduced, and discarded posts.</p>
         </div>
-        <div id="resultsSummary" class="results-summary empty-state">Run analysis to see a short workflow summary.</div>
         <div id="resultsList" class="results-list empty-state">No analysis yet.</div>
       </section>
 
-      <section class="panel next-panel" aria-labelledby="nextTitle">
-        <h2 id="nextTitle">What to do next</h2>
-        <ul class="next-steps">
-          <li>Review <strong>keep</strong> items first.</li>
-          <li>Ignore <strong>discard</strong> items.</li>
-          <li>Use <strong>reduce</strong> items only if they repeat.</li>
-          <li>Copy the Codex Prompt into Codex Web.</li>
-          <li>Ask for one small improvement PR.</li>
-        </ul>
+      <section class="panel" aria-labelledby="promptTitle">
+        <div class="section-heading">
+          <h2 id="promptTitle">Codex-ready Prompt</h2>
+          <p>Copy this into Codex when you are ready to make a small product improvement pass.</p>
+        </div>
+        <textarea id="promptOutput" rows="14" readonly placeholder="Analyze feedback to generate a Codex prompt."></textarea>
       </section>
 
       <section class="panel prompt-panel" aria-labelledby="promptTitle">
