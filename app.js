@@ -140,18 +140,18 @@ function analyzePost(post, index) {
   const hasProductSignal = getProductNameSignal(text);
   const evidence = evidenceLevel(text);
 
-  const engagementBaitTerms = ['thoughts?', 'agree?', 'bookmark this', 'follow for more', 'retweet to win'];
-  const noiseKeywords = ['airdrop', 'giveaway', 'promo', '100x', 'wagmi', 'claim reward', 'referral', 'free money'];
+  const engagementBaitTerms = ['thoughts?', 'agree?', 'bookmark this', 'follow for more', 'retweet to win', 'must read', 'hot take'];
+  const noiseKeywords = ['airdrop', 'giveaway', 'promo', '100x', 'wagmi', 'referral', 'claim reward', 'free money'];
 
   const hasEngagementBait = includesAny(text, engagementBaitTerms);
   const hasNoiseKeywords = includesAny(text, noiseKeywords);
-  const hasExcessiveNoise = hasNoiseKeywords ||
+  const isNoiseOverride = hasNoiseKeywords ||
                            hasExcessiveHashtags(post) ||
                            hasExcessiveEmojis(post) ||
                            hasEngagementBait;
 
   let decision, type;
-  if (hasExcessiveNoise) {
+  if (isNoiseOverride) {
     decision = 'discard';
     type = 'noise';
   } else {
@@ -225,8 +225,9 @@ function buildCodexPrompt() {
   const topPriorities = ranking.slice(0, 3).map((cluster, index) => `${index + 1}. ${cluster.title} — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}; evidence: ${cluster.evidenceLevel}
    Representative example: ${cluster.representativeExample}`).join('\n') || '1. No clustered priority yet; do not invent work without stronger evidence.';
   const topCluster = ranking[0];
+  const spec = topCluster ? generatePRSpec(topCluster) : null;
   const evidence = useful.length ? useful.map((item) => `- ${item.evidenceLevel}: ${item.originalPost}`).join('\n') : '- No concrete evidence captured yet.';
-  const prSpec = topCluster ? buildPRSpecMarkdown(generatePRSpec(topCluster)) : 'No PR spec available.';
+  const prSpec = spec ? buildPRSpecMarkdown(spec) : 'No PR spec available.';
   const issues = useful.length ? useful.slice(0, 5).map((item, i) => `${i + 1}. ${item.extractedProblem}\n   - Type: ${item.type}\n   - Severity: ${item.severity}\n   - Actionability: ${item.actionability}\n   - Evidence level: ${item.evidenceLevel}\n   - Why classified this way: ${(item.reasons || ['no reason saved']).join(', ')}\n   - Suggested fix: ${item.suggestedFix}`).join('\n') : '1. No prioritized issue yet; do not invent work without stronger evidence.';
   const firstPass = topCluster ? `- Default first PR: address ${topCluster.title}.\n- Use this representative example as acceptance context: ${topCluster.representativeExample}` : '- Ask for more concrete feedback or reproduce the issue manually before changing product code.';
 
@@ -244,18 +245,27 @@ function render() {
   const kept = state.results.filter((r) => r.decision === 'keep').length;
   const reduced = state.results.filter((r) => r.decision === 'reduce').length;
   const discarded = state.results.filter((r) => r.decision === 'discard').length;
+  const ranking = getPriorityRanking();
+  const topCluster = ranking[0];
+  const spec = topCluster ? generatePRSpec(topCluster) : null;
+
   elements.summaryText.textContent = state.results.length ? `${kept} keep, ${reduced} reduce, ${discarded} discard.` : 'Analyze feedback to see kept, reduced, and discarded posts.';
   elements.promptOutput.value = state.prompt || '';
   elements.resultsSummary.className = state.results.length ? 'results-summary' : 'results-summary empty-state';
   elements.resultsSummary.innerHTML = state.results.length ? resultSummaryCard(kept, reduced, discarded) : 'Run analysis to see a short workflow summary.';
-  elements.priorityRanking.className = state.results.length ? 'priority-ranking' : 'priority-ranking empty-state';
-  elements.priorityRanking.innerHTML = state.results.length ? renderPriorityRanking() : 'Priority ranking will appear after analysis.';
+
+  elements.priorityRanking.className = state.results.length && ranking.length ? 'priority-ranking' : 'priority-ranking empty-state';
+  elements.priorityRanking.innerHTML = state.results.length && ranking.length ? renderPriorityRanking(ranking) : 'Priority ranking will appear after analysis.';
+
   elements.issueClusters.className = state.results.length ? 'issue-clusters' : 'issue-clusters empty-state';
   elements.issueClusters.innerHTML = state.results.length ? renderIssueClusters() : 'Issue clusters will appear after analysis.';
-  elements.prSpecSection.className = state.results.length ? 'pr-spec-section' : 'pr-spec-section empty-state';
-  elements.prSpecSection.innerHTML = state.results.length && getPriorityRanking().length ? renderPRSpec() : 'PR Spec will appear after analysis.';
-  elements.implPromptSection.className = state.results.length && getPriorityRanking().length ? 'impl-prompt-section' : 'impl-prompt-section empty-state';
-  elements.implPromptSection.innerHTML = state.results.length && getPriorityRanking().length ? renderImplPrompt() : 'Implementation Prompt will appear after analysis.';
+
+  elements.prSpecSection.className = state.results.length && spec ? 'pr-spec-section' : 'pr-spec-section empty-state';
+  elements.prSpecSection.innerHTML = state.results.length && spec ? renderPRSpec(spec) : 'PR Spec will appear after analysis.';
+
+  elements.implPromptSection.className = state.results.length && spec ? 'impl-prompt-section' : 'impl-prompt-section empty-state';
+  elements.implPromptSection.innerHTML = state.results.length && spec ? renderImplPrompt(spec) : 'Implementation Prompt will appear after analysis.';
+
   elements.resultsList.className = state.results.length ? 'results-list' : 'results-list empty-state';
   elements.resultsList.innerHTML = state.results.length ? state.results.map(resultCard).join('') : 'No analysis yet.';
 }
@@ -388,6 +398,7 @@ function generatePRSpec(cluster) {
   return {
     problem: type,
     evidenceSummary: cluster.representativeExample,
+    priorityScore: cluster.priorityScore,
     frequency: cluster.frequency,
     severity: cluster.severity,
     actionability: cluster.actionability,
@@ -406,6 +417,7 @@ function buildPRSpecMarkdown(spec) {
 
 **Problem:** ${spec.problem}
 **Evidence summary:** ${spec.evidenceSummary}
+**Priority Score:** ${spec.priorityScore}
 **Frequency:** ${spec.frequency}
 **Severity:** ${spec.severity}
 **Actionability:** ${spec.actionability}
@@ -423,9 +435,7 @@ ${spec.suggestedFiles.map(file => `- ${file}`).join('\n')}
 ${spec.manualVerificationSteps.map(line => `- ${line}`).join('\n')}`;
 }
 
-function renderPRSpec() {
-  const topCluster = getPriorityRanking()[0];
-  const spec = generatePRSpec(topCluster);
+function renderPRSpec(spec) {
   if (!spec) return 'No PR spec generated.';
 
   return `<div class="pr-spec-heading">
@@ -440,7 +450,7 @@ function renderPRSpec() {
 function generateImplementationPrompt(spec) {
   if (!spec) return '';
   return `Task:
-Improve the ${spec.problem} flow based on user feedback.
+Improve the ${spec.problem} flow based on user feedback. (Priority Score: ${spec.priorityScore}, Frequency: ${spec.frequency})
 
 Files:
 ${spec.suggestedFiles.map(file => `- ${file}`).join('\n')}
@@ -457,9 +467,7 @@ Constraints:
 - No new dependencies`;
 }
 
-function renderImplPrompt() {
-  const topCluster = getPriorityRanking()[0];
-  const spec = generatePRSpec(topCluster);
+function renderImplPrompt(spec) {
   if (!spec) return 'No Implementation Prompt generated.';
 
   return `<div class="impl-prompt-heading">
@@ -471,9 +479,8 @@ function renderImplPrompt() {
     </div>`;
 }
 
-function renderPriorityRanking() {
-  const ranking = getPriorityRanking();
-  if (!ranking.length) return 'No priority ranking yet.';
+function renderPriorityRanking(ranking) {
+  if (!ranking || !ranking.length) return 'No priority ranking yet.';
   return `<div class="priority-heading"><h3>Priority Ranking</h3><p>Score = (frequency × 3) + severity + actionability + evidence.</p></div>
     <div class="priority-list">${ranking.map((cluster, index) => `<article class="priority-card">
       <div class="priority-rank">#${index + 1}</div>
@@ -619,9 +626,10 @@ function markdownExport() {
   const priorities = ranking.slice(0, 3).map((cluster, index) => `${index + 1}. **${cluster.title}** — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}\n   - Representative example: ${cluster.representativeExample}`).join('\n');
   const clusters = getIssueClusters().map((cluster) => `- **${cluster.title}** — frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}\n  - Representative example: ${cluster.representativeExample}`).join('\n');
   const rows = state.results.map((item) => `- **${item.decision} / ${item.type} / ${item.severity}** — ${item.extractedProblem}\n  - Actionability: ${item.actionability}\n  - Evidence: ${item.evidenceLevel}\n  - Why classified this way: ${(item.reasons || []).join(', ')}\n  - Suggested fix: ${item.suggestedFix}\n  - Original: ${item.originalPost}`).join('\n');
-  const spec = generatePRSpec(ranking[0]);
-  const prSpec = buildPRSpecMarkdown(spec);
-  const implPrompt = generateImplementationPrompt(spec);
+  const topCluster = ranking[0];
+  const spec = topCluster ? generatePRSpec(topCluster) : null;
+  const prSpec = spec ? buildPRSpecMarkdown(spec) : '';
+  const implPrompt = spec ? generateImplementationPrompt(spec) : '';
   return `# Signal-to-Fix Analysis\n\n## Priority Ranking\n\n${priorities || 'No priorities yet.'}\n\n## PR Spec\n\n${prSpec || 'No PR Spec generated.'}\n\n## Implementation Prompt\n\n\`\`\`text\n${implPrompt || 'No Implementation Prompt generated.'}\n\`\`\`\n\n## Issue Clusters\n\n${clusters || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
 }
 
@@ -686,13 +694,14 @@ elements.copyPromptBtn.addEventListener('click', copyPrompt);
 elements.copyPromptInlineBtn.addEventListener('click', copyPrompt);
 elements.exportMdBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.md`, 'text/markdown', markdownExport()));
 elements.exportJsonBtn.addEventListener('click', () => {
-  const topCluster = getPriorityRanking()[0];
-  const spec = generatePRSpec(topCluster);
+  const ranking = getPriorityRanking();
+  const topCluster = ranking[0];
+  const spec = topCluster ? generatePRSpec(topCluster) : null;
   downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({
     context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value },
-    priorityRanking: getPriorityRanking(),
+    priorityRanking: ranking,
     prSpec: spec,
-    implementationPrompt: generateImplementationPrompt(spec),
+    implementationPrompt: spec ? generateImplementationPrompt(spec) : null,
     issueClusters: getIssueClusters(),
     results: state.results,
     codexPrompt: state.prompt || buildCodexPrompt()
