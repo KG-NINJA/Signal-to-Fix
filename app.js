@@ -209,7 +209,7 @@ function analyzeFeedback() {
 }
 
 function usefulResults() {
-  return state.results.filter((item) => item.decision !== 'discard' && item.type !== 'noise');
+  return state.results.filter((item) => item.decision === 'keep');
 }
 
 function buildCodexPrompt() {
@@ -302,7 +302,7 @@ function highestEvidenceLevel(items) {
 
 function getIssueClusters() {
   const groups = state.results
-    .filter(item => item.decision !== 'discard' && item.type !== 'noise')
+    .filter(item => item.decision === 'keep')
     .reduce((acc, item) => {
       const title = clusterTitleFor(item);
       acc[title] = acc[title] || [];
@@ -626,7 +626,9 @@ function markdownExport() {
   const ranking = state.ranking;
   const priorities = ranking.slice(0, 3).map((cluster, index) => `${index + 1}. **${cluster.title}** — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}\n   - Representative example: ${cluster.representativeExample}`).join('\n');
   const clusterList = state.clusters.map((cluster) => `- **${cluster.title}** — frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}\n  - Representative example: ${cluster.representativeExample}`).join('\n');
-  const rows = state.results.map((item) => `- **${item.decision} / ${item.type} / ${item.severity}** — ${item.extractedProblem}\n  - Actionability: ${item.actionability}\n  - Evidence: ${item.evidenceLevel}\n  - Why classified this way: ${(item.reasons || []).join(', ')}\n  - Suggested fix: ${item.suggestedFix}\n  - Original: ${item.originalPost}`).join('\n');
+  const rows = state.results
+    .filter((item) => item.decision === 'keep')
+    .map((item) => `- **${item.decision} / ${item.type} / ${item.severity}** — ${item.extractedProblem}\n  - Actionability: ${item.actionability}\n  - Evidence: ${item.evidenceLevel}\n  - Why classified this way: ${(item.reasons || []).join(', ')}\n  - Suggested fix: ${item.suggestedFix}\n  - Original: ${item.originalPost}`).join('\n');
   const topCluster = ranking[0];
   const spec = topCluster ? generatePRSpec(topCluster) : null;
   const prSpec = spec ? buildPRSpecMarkdown(spec) : '';
@@ -684,6 +686,8 @@ function clearAll() {
   elements.targetArea.value = '';
   elements.feedbackInput.value = '';
   state.results = [];
+  state.clusters = [];
+  state.ranking = [];
   state.prompt = '';
   render();
   elements.statusMessage.textContent = 'Cleared.';
@@ -704,7 +708,7 @@ elements.exportJsonBtn.addEventListener('click', () => {
     prSpec: spec,
     implementationPrompt: spec ? generateImplementationPrompt(spec) : null,
     issueClusters: state.clusters,
-    results: state.results,
+    results: state.results.filter(item => item.decision === 'keep'),
     codexPrompt: state.prompt || buildCodexPrompt()
   }, null, 2));
 });
@@ -719,7 +723,15 @@ elements.implPromptSection.addEventListener('click', (e) => {
     copyImplPrompt();
   }
 });
-[elements.productName, elements.productUrl, elements.targetArea, elements.feedbackInput].forEach((input) => input.addEventListener('input', saveState));
+[elements.productName, elements.productUrl, elements.targetArea].forEach((input) => input.addEventListener('input', saveState));
+elements.feedbackInput.addEventListener('input', () => {
+  state.results = [];
+  state.clusters = [];
+  state.ranking = [];
+  state.prompt = '';
+  render();
+  saveState();
+});
 
 async function copyPrSpec() {
   const output = document.getElementById('prSpecOutput');
