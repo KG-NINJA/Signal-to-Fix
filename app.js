@@ -5,6 +5,13 @@ const STORAGE_KEY = 'signal_to_fix_v1';
 const EXPORT_BASENAME = 'signal-to-fix-analysis';
 const ORIGINAL_PREVIEW_LIMIT = 600;
 
+const ONBOARDING_HELP_TERMS = [
+  'what to paste', "don't understand", 'dont understand', 'confusing', 'when to use',
+  'how to use', 'where to use', 'getting started', 'first use', 'guide', 'instructions',
+  '使い方', '何を貼る', 'わからない', '分からない', '迷う', 'どこで使う',
+  'どこで使え', 'いつ使う', 'ガイド', '説明', '初回', '最初'
+];
+
 const RULES = {
   // Obvious spam, promotion, engagement bait, and vague hype.
   noise: [
@@ -15,6 +22,7 @@ const RULES = {
   // Signals that should keep or boost feedback because they point to a product problem.
   useful: [
     'bug', 'broken', 'crash', 'error', 'failed', 'stuck', 'confusing', 'hard to use',
+    ...ONBOARDING_HELP_TERMS,
     'slow', 'missing', 'please add', 'need', 'wish', 'support', 'refund', 'cancel', 'expensive', 'pricing', 'docs', 'api', 'screenshot',
     'before/after', '使いにくい', 'わかりにくい', 'エラー', '壊れた', '遅い', '重い',
     '落ちる', '開かない', 'ログインできない', '課金', '高い', '解約', '返金',
@@ -23,6 +31,7 @@ const RULES = {
   // Classification keywords. First strong match wins, then fallback scoring is used.
   types: {
     bug: ['bug', 'broken', 'crash', 'error', 'failed', 'stuck', 'does not work', 'crashes', 'エラー', '壊れた', '落ちる', '開かない', 'ログインできない', 'バグ'],
+    'onboarding complaint': ONBOARDING_HELP_TERMS,
     'UX complaint': ['confusing', 'hard to use', 'slow', '使いにくい', 'わかりにくい', '重い', '遅い', 'annoying', 'clunky', 'too many steps'],
     'feature request': ['missing', 'please add', 'need', 'wish', 'feature request', '追加してほしい', '対応してほしい', 'support'],
     'pricing complaint': ['expensive', 'price', 'pricing', 'billing', 'refund', 'cancel', '課金', '高い', '解約', '返金'],
@@ -36,7 +45,7 @@ const RULES = {
     'multiple-user pattern': ['everyone', 'many users', 'lots of people', 'multiple users', '+1', 'same here'],
     'screenshot-backed': ['screenshot', 'screen shot', 'attached', 'image', 'before/after'],
     'reproducible issue': ['steps', 'reproduce', 'when i', 'after i', 'every time', 'on ios', 'on android', 'ios', 'android', 'ログインできない'],
-    'concrete complaint': ['because', 'when', 'after', 'takes', 'shows', 'says', 'cannot', "can't", '開かない', '落ちる', '使いにくい', 'わかりにくい', '重い', '遅い']
+    'concrete complaint': ['because', 'when', 'after', 'takes', 'shows', 'says', 'cannot', "can't", ...ONBOARDING_HELP_TERMS, '開かない', '落ちる', '使いにくい', 'わかりにくい', '重い', '遅い']
   }
 };
 
@@ -51,10 +60,12 @@ const elements = {
   analyzeBtn: $('analyzeBtn'),
   loadSampleBtn: $('loadSampleBtn'),
   copyPromptBtn: $('copyPromptBtn'),
+  copyPromptInlineBtn: $('copyPromptInlineBtn'),
   exportMdBtn: $('exportMdBtn'),
   exportJsonBtn: $('exportJsonBtn'),
   clearBtn: $('clearBtn'),
   statusMessage: $('statusMessage'),
+  resultsSummary: $('resultsSummary'),
   resultsList: $('resultsList'),
   summaryText: $('summaryText'),
   promptOutput: $('promptOutput')
@@ -99,6 +110,7 @@ function buildReasons(text, post, type, noiseScore, usefulScore, evidence, hasPr
   const reasons = [];
   if (includesAny(text, RULES.types.bug)) reasons.push('bug keyword detected');
   if (includesAny(text, RULES.types['pricing complaint'])) reasons.push('pricing complaint detected');
+  if (includesAny(text, RULES.types['onboarding complaint'])) reasons.push('onboarding/help keyword detected');
   if (includesAny(text, RULES.types['feature request'])) reasons.push('feature request detected');
   if (includesAny(text, RULES.types['UX complaint'])) reasons.push('UX complaint detected');
   if (evidence === 'screenshot-backed') reasons.push('screenshot evidence detected');
@@ -124,7 +136,7 @@ function analyzePost(post, index) {
   const hasConcreteSignal = usefulScore > 0 || hasProductSignal || evidence !== 'vague opinion';
   const type = hasConcreteSignal ? classifyType(text) : (includesAny(text, RULES.types.praise) ? 'praise' : 'noise');
   const reasons = buildReasons(text, post, type, noiseScore, usefulScore, evidence, hasProductSignal);
-  const actionabilityScore = usefulScore + (evidence === 'vague opinion' ? 0 : 1) + (hasProductSignal ? 1 : 0) + (type !== 'noise' && type !== 'praise' ? 1 : 0);
+  const actionabilityScore = usefulScore + (evidence === 'vague opinion' ? 0 : 1) + (hasProductSignal ? 1 : 0) + (type === 'onboarding complaint' ? 1 : 0) + (type !== 'noise' && type !== 'praise' ? 1 : 0);
 
   let decision = 'keep';
   if (!hasConcreteSignal && noiseScore >= 2) decision = 'discard';
@@ -157,6 +169,7 @@ function suggestFix(post, type, severity) {
   const prefix = severity === 'high' ? 'Prioritize a small fix or guardrail' : 'Make a focused improvement';
   const suggestions = {
     bug: `${prefix}: reproduce the failure, add a regression check, and patch the smallest broken path.`,
+    'onboarding complaint': `${prefix}: add compact how-to-use steps, helper text near the paste box, and button explanations for Analyze Feedback, Copy Codex Prompt, Export Markdown, Export JSON, and keep/reduce/discard.`,
     'UX complaint': `${prefix}: simplify the confusing step, clarify labels, or add inline guidance.`,
     'feature request': `${prefix}: add the smallest useful version or document a workaround.`,
     'pricing complaint': `${prefix}: clarify pricing, cancellation, refund, or plan comparison copy.`,
@@ -205,8 +218,46 @@ function render() {
   const discarded = state.results.filter((r) => r.decision === 'discard').length;
   elements.summaryText.textContent = state.results.length ? `${kept} keep, ${reduced} reduce, ${discarded} discard.` : 'Analyze feedback to see kept, reduced, and discarded posts.';
   elements.promptOutput.value = state.prompt || '';
+  elements.resultsSummary.className = state.results.length ? 'results-summary' : 'results-summary empty-state';
+  elements.resultsSummary.innerHTML = state.results.length ? resultSummaryCard(kept, reduced, discarded) : 'Run analysis to see a short workflow summary.';
   elements.resultsList.className = state.results.length ? 'results-list' : 'results-list empty-state';
   elements.resultsList.innerHTML = state.results.length ? state.results.map(resultCard).join('') : 'No analysis yet.';
+}
+
+function resultSummaryCard(kept, reduced, discarded) {
+  const total = state.results.length;
+  const topType = getTopIssueType();
+  const targetArea = elements.targetArea.value.trim() || 'the highest-signal area';
+  const usefulLabel = kept === 1 ? 'useful signal' : 'useful signals';
+  const weakCount = reduced;
+  const weakLabel = weakCount === 1 ? 'weak/noisy signal' : 'weak/noisy signals';
+  const discardLabel = discarded === 1 ? 'discarded item' : 'discarded items';
+  return `<div class="summary-grid">
+    <div><span class="summary-number">${total}</span><span class="summary-label">posts analyzed</span></div>
+    <div><span class="summary-number keep-text">${kept}</span><span class="summary-label">keep</span></div>
+    <div><span class="summary-number reduce-text">${reduced}</span><span class="summary-label">reduce</span></div>
+    <div><span class="summary-number discard-text">${discarded}</span><span class="summary-label">discard</span></div>
+  </div>
+  <p class="summary-sentence">${total} posts analyzed. ${kept} ${usefulLabel}, ${weakCount} ${weakLabel}, ${discarded} ${discardLabel}. Top issue type: <strong>${escapeHtml(topType)}</strong>. Next: copy the Codex prompt and ask Codex to improve ${escapeHtml(targetArea)}.</p>`;
+}
+
+function getTopIssueType() {
+  const counts = state.results
+    .filter((item) => item.decision !== 'discard' && item.type !== 'noise' && item.type !== 'praise')
+    .reduce((acc, item) => {
+      acc[item.type] = (acc[item.type] || 0) + 1;
+      return acc;
+    }, {});
+  const [topType] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || ['No product issue yet'];
+  return topType;
+}
+
+function decisionExplanation(decision) {
+  return {
+    keep: 'useful signal',
+    reduce: 'weak or noisy but possibly useful',
+    discard: 'likely noise'
+  }[decision] || 'needs review';
 }
 
 function previewText(value, limit = ORIGINAL_PREVIEW_LIMIT) {
@@ -215,20 +266,25 @@ function previewText(value, limit = ORIGINAL_PREVIEW_LIMIT) {
 }
 
 function resultCard(item) {
-  return `<article class="result-card">
+  return `<article class="result-card ${item.decision}">
     <div class="result-top">
-      <span class="badge ${item.decision}">${escapeHtml(item.decision)}</span>
-      <span class="badge">${escapeHtml(item.type)}</span>
-      <span class="badge">severity: ${escapeHtml(item.severity)}</span>
-      <span class="badge">actionability: ${escapeHtml(item.actionability)}</span>
-      <span class="badge">${escapeHtml(item.evidenceLevel)}</span>
+      <span class="badge ${item.decision}">${escapeHtml(item.decision)} = ${escapeHtml(decisionExplanation(item.decision))}</span>
+      <span class="badge type-badge">${escapeHtml(item.type)}</span>
     </div>
-    <div class="result-grid">
-      <div class="result-field"><strong>Extracted problem</strong>${escapeHtml(item.extractedProblem)}</div>
-      <div class="result-field"><strong>Suggested fix</strong>${escapeHtml(item.suggestedFix)}</div>
-      <div class="result-field original"><strong>Why classified this way</strong>${escapeHtml((item.reasons || []).join(', '))}</div>
-      <div class="result-field original"><strong>Original post</strong>${escapeHtml(previewText(item.originalPost))}</div>
+    <div class="result-main">
+      <div class="result-field problem"><strong>Extracted problem</strong>${escapeHtml(item.extractedProblem)}</div>
+      <div class="result-field fix"><strong>Suggested fix</strong>${escapeHtml(item.suggestedFix)}</div>
     </div>
+    <details class="result-details">
+      <summary>Show labels and original post</summary>
+      <div class="result-grid">
+        <div class="result-field"><strong>Severity</strong>${escapeHtml(item.severity)}</div>
+        <div class="result-field"><strong>Actionability</strong>${escapeHtml(item.actionability)}</div>
+        <div class="result-field"><strong>Evidence level</strong>${escapeHtml(item.evidenceLevel)}</div>
+        <div class="result-field"><strong>Why classified this way</strong>${escapeHtml((item.reasons || []).join(', '))}</div>
+        <div class="result-field original"><strong>Original post</strong>${escapeHtml(previewText(item.originalPost))}</div>
+      </div>
+    </details>
   </article>`;
 }
 
@@ -347,6 +403,7 @@ function clearAll() {
 elements.analyzeBtn.addEventListener('click', analyzeFeedback);
 elements.loadSampleBtn.addEventListener('click', loadSampleFeedback);
 elements.copyPromptBtn.addEventListener('click', copyPrompt);
+elements.copyPromptInlineBtn.addEventListener('click', copyPrompt);
 elements.exportMdBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.md`, 'text/markdown', markdownExport()));
 elements.exportJsonBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({ context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value }, results: state.results, codexPrompt: state.prompt || buildCodexPrompt() }, null, 2)));
 elements.clearBtn.addEventListener('click', clearAll);
