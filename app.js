@@ -52,7 +52,7 @@ const RULES = {
 };
 
 const $ = (id) => document.getElementById(id);
-const state = { results: [], prompt: '' };
+const state = { results: [], clusters: [], ranking: [], prompt: '' };
 
 const elements = {
   productName: $('productName'),
@@ -206,6 +206,8 @@ function suggestFix(post, type, severity) {
 function analyzeFeedback() {
   const posts = elements.feedbackInput.value.split('\n').map((line) => line.trim()).filter(Boolean);
   state.results = posts.map(analyzePost);
+  state.clusters = getIssueClusters();
+  state.ranking = [...state.clusters].sort((a, b) => b.priorityScore - a.priorityScore || b.frequency - a.frequency);
   state.prompt = buildCodexPrompt();
   render();
   saveState();
@@ -221,7 +223,7 @@ function buildCodexPrompt() {
   const productUrl = elements.productUrl.value.trim() || '[product URL]';
   const targetArea = elements.targetArea.value.trim() || '[target area]';
   const useful = usefulResults().sort((a, b) => scoreResult(b) - scoreResult(a)).slice(0, 8);
-  const ranking = getPriorityRanking();
+  const ranking = state.ranking;
   const topPriorities = ranking.slice(0, 3).map((cluster, index) => `${index + 1}. ${cluster.title} — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}; evidence: ${cluster.evidenceLevel}
    Representative example: ${cluster.representativeExample}`).join('\n') || '1. No clustered priority yet; do not invent work without stronger evidence.';
   const topCluster = ranking[0];
@@ -231,7 +233,8 @@ function buildCodexPrompt() {
   const issues = useful.length ? useful.slice(0, 5).map((item, i) => `${i + 1}. ${item.extractedProblem}\n   - Type: ${item.type}\n   - Severity: ${item.severity}\n   - Actionability: ${item.actionability}\n   - Evidence level: ${item.evidenceLevel}\n   - Why classified this way: ${(item.reasons || ['no reason saved']).join(', ')}\n   - Suggested fix: ${item.suggestedFix}`).join('\n') : '1. No prioritized issue yet; do not invent work without stronger evidence.';
   const firstPass = topCluster ? `- Default first PR: address ${topCluster.title}.\n- Use this representative example as acceptance context: ${topCluster.representativeExample}` : '- Ask for more concrete feedback or reproduce the issue manually before changing product code.';
 
-  return `Title:\nImprove ${productName} based on X/Twitter feedback\n\nContext:\n- Product: ${productName}\n- Product URL: ${productUrl}\n- Target area: ${targetArea}\n\nEvidence:\n${evidence}\n\nTop priorities:\n${topPriorities}\n\nPR Spec for Highest Priority:\n${prSpec}\n\nPrioritized issues:\n${issues}\n\nRecommended small first pass:\n${firstPass}\n- Keep changes small, focused, and easy to review.\n- Prefer the highest-ranked cluster if time is limited.\n\nNon-goals:\n- Do not redesign the entire app.\n- Do not add APIs, authentication, databases, or new dependencies.\n- Do not use the GitHub API unless it is already configured in this repository.\n- Do not overbuild beyond the evidence above.\n\nScreenshot instruction:\n- If browser/computer-use is available, capture before/after screenshots for the changed flow or UI.\n- If screenshots are not possible, explain why and include a concise manual verification note.\n\nCompatibility:\n- Keep the app stable and GitHub Pages compatible.`;
+  const scoreText = topCluster ? ` (Priority Score: ${topCluster.priorityScore}, Frequency: ${topCluster.frequency})` : '';
+  return `Title:\nImprove ${productName} based on X/Twitter feedback\n\nContext:\n- Product: ${productName}\n- Product URL: ${productUrl}\n- Target area: ${targetArea}\n\nEvidence:\n${evidence}\n\nTop priorities:\n${topPriorities}\n\nPR Spec for Highest Priority:${scoreText}\n${prSpec}\n\nPrioritized issues:\n${issues}\n\nRecommended small first pass:\n${firstPass}\n- Keep changes small, focused, and easy to review.\n- Prefer the highest-ranked cluster if time is limited.\n\nNon-goals:\n- Do not redesign the entire app.\n- Do not add APIs, authentication, databases, or new dependencies.\n- Do not use the GitHub API unless it is already configured in this repository.\n- Do not overbuild beyond the evidence above.\n\nScreenshot instruction:\n- If browser/computer-use is available, capture before/after screenshots for the changed flow or UI.\n- If screenshots are not possible, explain why and include a concise manual verification note.\n\nCompatibility:\n- Keep the app stable and GitHub Pages compatible.`;
 }
 
 function scoreResult(item) {
@@ -245,7 +248,8 @@ function render() {
   const kept = state.results.filter((r) => r.decision === 'keep').length;
   const reduced = state.results.filter((r) => r.decision === 'reduce').length;
   const discarded = state.results.filter((r) => r.decision === 'discard').length;
-  const ranking = getPriorityRanking();
+  const ranking = state.ranking;
+  const clusters = state.clusters;
   const topCluster = ranking[0];
   const spec = topCluster ? generatePRSpec(topCluster) : null;
 
@@ -257,8 +261,8 @@ function render() {
   elements.priorityRanking.className = state.results.length && ranking.length ? 'priority-ranking' : 'priority-ranking empty-state';
   elements.priorityRanking.innerHTML = state.results.length && ranking.length ? renderPriorityRanking(ranking) : 'Priority ranking will appear after analysis.';
 
-  elements.issueClusters.className = state.results.length ? 'issue-clusters' : 'issue-clusters empty-state';
-  elements.issueClusters.innerHTML = state.results.length ? renderIssueClusters() : 'Issue clusters will appear after analysis.';
+  elements.issueClusters.className = state.results.length && clusters.length ? 'issue-clusters' : 'issue-clusters empty-state';
+  elements.issueClusters.innerHTML = state.results.length && clusters.length ? renderIssueClusters(clusters) : 'Issue clusters will appear after analysis.';
 
   elements.prSpecSection.className = state.results.length && spec ? 'pr-spec-section' : 'pr-spec-section empty-state';
   elements.prSpecSection.innerHTML = state.results.length && spec ? renderPRSpec(spec) : 'PR Spec will appear after analysis.';
@@ -493,9 +497,8 @@ function renderPriorityRanking(ranking) {
 }
 
 
-function renderIssueClusters() {
-  const clusters = getIssueClusters();
-  if (!clusters.length) return 'No issue clusters yet.';
+function renderIssueClusters(clusters) {
+  if (!clusters || !clusters.length) return 'No issue clusters yet.';
   return `<div class="cluster-heading"><h3>Issue clusters</h3><p>Repeated problems are grouped so you can prioritize the most common themes.</p></div>
     <div class="cluster-grid">${clusters.map((cluster) => `<article class="cluster-card">
       <div class="cluster-title">${escapeHtml(cluster.title)}</div>
@@ -586,6 +589,7 @@ function saveState() {
       targetArea: elements.targetArea.value,
       feedback: elements.feedbackInput.value,
       results: state.results,
+      ranking: state.ranking,
       prompt: state.prompt
     }));
   } catch (error) {
@@ -601,6 +605,7 @@ function loadState() {
     elements.targetArea.value = saved.targetArea || '';
     elements.feedbackInput.value = saved.feedback || '';
     state.results = Array.isArray(saved.results) ? saved.results : [];
+    state.ranking = Array.isArray(saved.ranking) ? saved.ranking : [];
     state.prompt = saved.prompt || '';
   } catch (error) {
     elements.statusMessage.textContent = 'Saved data could not be loaded. Starting with a blank workspace.';
@@ -622,15 +627,15 @@ function downloadFile(filename, type, content) {
 }
 
 function markdownExport() {
-  const ranking = getPriorityRanking();
+  const ranking = state.ranking;
   const priorities = ranking.slice(0, 3).map((cluster, index) => `${index + 1}. **${cluster.title}** — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}\n   - Representative example: ${cluster.representativeExample}`).join('\n');
-  const clusters = getIssueClusters().map((cluster) => `- **${cluster.title}** — frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}\n  - Representative example: ${cluster.representativeExample}`).join('\n');
+  const clusterList = state.clusters.map((cluster) => `- **${cluster.title}** — frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}\n  - Representative example: ${cluster.representativeExample}`).join('\n');
   const rows = state.results.map((item) => `- **${item.decision} / ${item.type} / ${item.severity}** — ${item.extractedProblem}\n  - Actionability: ${item.actionability}\n  - Evidence: ${item.evidenceLevel}\n  - Why classified this way: ${(item.reasons || []).join(', ')}\n  - Suggested fix: ${item.suggestedFix}\n  - Original: ${item.originalPost}`).join('\n');
   const topCluster = ranking[0];
   const spec = topCluster ? generatePRSpec(topCluster) : null;
   const prSpec = spec ? buildPRSpecMarkdown(spec) : '';
   const implPrompt = spec ? generateImplementationPrompt(spec) : '';
-  return `# Signal-to-Fix Analysis\n\n## Priority Ranking\n\n${priorities || 'No priorities yet.'}\n\n## PR Spec\n\n${prSpec || 'No PR Spec generated.'}\n\n## Implementation Prompt\n\n\`\`\`text\n${implPrompt || 'No Implementation Prompt generated.'}\n\`\`\`\n\n## Issue Clusters\n\n${clusters || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
+  return `# Signal-to-Fix Analysis\n\n## Priority Ranking\n\n${priorities || 'No priorities yet.'}\n\n## PR Spec\n\n${prSpec || 'No PR Spec generated.'}\n\n## Implementation Prompt\n\n\`\`\`text\n${implPrompt || 'No Implementation Prompt generated.'}\n\`\`\`\n\n## Issue Clusters\n\n${clusterList || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
 }
 
 async function copyPrompt() {
@@ -694,7 +699,7 @@ elements.copyPromptBtn.addEventListener('click', copyPrompt);
 elements.copyPromptInlineBtn.addEventListener('click', copyPrompt);
 elements.exportMdBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.md`, 'text/markdown', markdownExport()));
 elements.exportJsonBtn.addEventListener('click', () => {
-  const ranking = getPriorityRanking();
+  const ranking = state.ranking;
   const topCluster = ranking[0];
   const spec = topCluster ? generatePRSpec(topCluster) : null;
   downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({
@@ -702,7 +707,7 @@ elements.exportJsonBtn.addEventListener('click', () => {
     priorityRanking: ranking,
     prSpec: spec,
     implementationPrompt: spec ? generateImplementationPrompt(spec) : null,
-    issueClusters: getIssueClusters(),
+    issueClusters: state.clusters,
     results: state.results,
     codexPrompt: state.prompt || buildCodexPrompt()
   }, null, 2));
