@@ -72,6 +72,7 @@ const elements = {
   issueClusters: $('issueClusters'),
   resultsList: $('resultsList'),
   prSpecSection: $('prSpecSection'),
+  implPromptSection: $('implPromptSection'),
   summaryText: $('summaryText'),
   promptOutput: $('promptOutput')
 };
@@ -236,6 +237,8 @@ function render() {
   elements.issueClusters.innerHTML = state.results.length ? renderIssueClusters() : 'Issue clusters will appear after analysis.';
   elements.prSpecSection.className = state.results.length ? 'pr-spec-section' : 'pr-spec-section empty-state';
   elements.prSpecSection.innerHTML = state.results.length ? renderPRSpec() : 'PR Spec will appear after analysis.';
+  elements.implPromptSection.className = state.results.length ? 'impl-prompt-section' : 'impl-prompt-section empty-state';
+  elements.implPromptSection.innerHTML = state.results.length ? renderImplPrompt() : 'Implementation Prompt will appear after analysis.';
   elements.resultsList.className = state.results.length ? 'results-list' : 'results-list empty-state';
   elements.resultsList.innerHTML = state.results.length ? state.results.map(resultCard).join('') : 'No analysis yet.';
 }
@@ -305,69 +308,58 @@ function getPriorityRanking() {
 function generatePRSpec(cluster) {
   if (!cluster) return null;
 
-  const acceptanceCriteriaMap = {
-    'Onboarding confusion': [
-      'Add onboarding help panel',
-      'Add example feedback input',
-      'Add first-run instructions'
-    ],
-    'Login failures': [
-      'Improve login error messaging',
-      'Add recovery guidance',
-      'Verify login flow'
-    ],
-    'Bug reports': [
-      'Reproduce issue',
-      'Add regression protection',
-      'Verify affected flow'
-    ],
-    'Pricing transparency': [
-      'Clarify pricing information',
-      'Clarify cancellation flow',
-      'Clarify refund process'
-    ],
-    'UX complaints': [
-      'Simplify the confusing step',
-      'Clarify labels',
-      'Add inline guidance'
-    ],
-    'Performance complaints': [
-      'Identify performance bottleneck',
-      'Optimize critical path',
-      'Verify latency improvement'
-    ],
-    'Documentation gaps': [
-      'Improve missing docs section',
-      'Add concrete usage example',
-      'Verify docs clarity'
-    ],
-    'Feature requests': [
-      'Implement smallest useful version of feature',
-      'Document feature usage',
-      'Verify feature functionality'
-    ],
-    'Export guidance': [
-      'Clarify export formats',
-      'Add export instructions',
-      'Verify export contents'
-    ]
-  };
-
+  const example = cluster.representativeExample.toLowerCase();
   const type = cluster.title;
-  const ac = acceptanceCriteriaMap[type] || ['Reproduce the reported issue', 'Implement a focused fix', 'Verify the fix with manual testing'];
 
-  let suggestedFiles = ['app.js'];
-  if (['UX complaints', 'Onboarding confusion', 'Performance complaints'].includes(type)) {
-    suggestedFiles = ['index.html', 'app.js', 'style.css'];
-  } else if (type === 'Documentation gaps') {
-    suggestedFiles = ['index.html'];
-  }
+  // Dynamic Acceptance Criteria
+  const ac = [];
+  if (example.includes('confusing')) ac.push(`Clarify the ${type.toLowerCase()} flow to reduce confusion`);
+  if (example.includes('hard to use')) ac.push(`Simplify the ${type.toLowerCase()} interactions for better usability`);
+  if (example.includes('slow') || example.includes('lag')) ac.push(`Optimize the ${type.toLowerCase()} performance`);
+  if (example.includes('broken') || example.includes('bug') || example.includes('error')) ac.push(`Fix the reported ${type.toLowerCase()} issue`);
+  if (example.includes('missing') || example.includes('add')) ac.push(`Add the requested ${type.toLowerCase()} functionality`);
 
-  const riskLevel = (type === 'Bug reports' || type === 'Login failures') ? 'high' : (['UX complaints', 'Onboarding confusion', 'Performance complaints'].includes(type) ? 'medium' : 'low');
+  // Specific requirements from example
+  if (example.includes('import')) ac.push('Explain next step after import');
+  if (example.includes('analyze')) ac.push('Highlight Analyze Feedback button');
+  if (example.includes('export')) ac.push('Clarify export options and success state');
+  if (example.includes('login') || example.includes('sign in')) ac.push('Improve login error messaging and recovery path');
 
+  if (ac.length === 0) ac.push(`Address the core issue: "${cluster.representativeExample.slice(0, 50)}..."`);
+  ac.push(`Ensure ${type} satisfies basic requirements and handles edge cases`);
+
+  // Dynamic Suggested Files
+  const suggestedFiles = [];
+  const textKeywords = ['word', 'text', 'label', 'title', 'instruction', 'description', 'copy', 'docs', 'explanation', 'onboarding', 'message', 'guidance', 'ui'];
+  const styleKeywords = ['visual', 'color', 'layout', 'css', 'style', 'hidden', 'visible', 'prominent', 'highlight', 'look', 'feel', 'ui'];
+  const logicKeywords = ['behavior', 'logic', 'calculate', 'rank', 'filter', 'process', 'save', 'load', 'export', 'analyze', 'bug', 'crash', 'fail', 'click', 'button', 'import'];
+
+  if (textKeywords.some(k => example.includes(k))) suggestedFiles.push('index.html');
+  if (styleKeywords.some(k => example.includes(k))) suggestedFiles.push('style.css');
+  if (logicKeywords.some(k => example.includes(k)) || suggestedFiles.length === 0) suggestedFiles.push('app.js');
+
+  // Dedupe and sort
+  const finalFiles = [...new Set(suggestedFiles)].sort();
+
+  // Dynamic Risk Assessment
+  let riskLevel = 'low';
+  if (example.includes('analyze') || example.includes('rank') || example.includes('classification')) riskLevel = 'high';
+  else if (finalFiles.includes('app.js') && finalFiles.length > 1) riskLevel = 'medium';
+
+  // Dynamic Effort Estimate
   let effort = 'small';
-  if (cluster.severity === 'high' || cluster.frequency > 5) effort = 'large';
-  else if (cluster.severity === 'medium' || cluster.frequency > 2) effort = 'medium';
+  if (cluster.severity === 'high' || cluster.frequency > 5 || finalFiles.length === 3) effort = 'large';
+  else if (cluster.severity === 'medium' || cluster.frequency > 2 || finalFiles.length === 2) effort = 'medium';
+
+  // Dynamic Verification Steps
+  const ver = [
+    'Load the application in a local browser',
+    `Perform actions to reproduce the scenario: "${cluster.representativeExample.slice(0, 60)}..."`,
+  ];
+  if (example.includes('import')) ver.push('Confirm next-step guidance appears after import');
+  if (example.includes('analyze')) ver.push('Confirm Analyze button is visible and functional');
+  if (example.includes('export')) ver.push('Verify export content and success confirmation');
+  ver.push('Confirm the fix behaves as expected and no regressions are introduced');
 
   return {
     problem: type,
@@ -375,15 +367,12 @@ function generatePRSpec(cluster) {
     frequency: cluster.frequency,
     severity: cluster.severity,
     actionability: cluster.actionability,
+    evidenceLevel: cluster.evidenceLevel,
     acceptanceCriteria: ac,
-    suggestedFiles,
+    suggestedFiles: finalFiles,
     riskLevel,
     estimatedEffort: effort,
-    manualVerificationSteps: [
-      'Load the application in a local browser',
-      `Perform the steps to trigger the ${type} scenario`,
-      'Confirm the fix behaves as expected according to acceptance criteria'
-    ]
+    manualVerificationSteps: ver
   };
 }
 
@@ -421,6 +410,40 @@ function renderPRSpec() {
     </div>
     <div class="pr-spec-body">
       <pre id="prSpecOutput">${escapeHtml(buildPRSpecMarkdown(spec))}</pre>
+    </div>`;
+}
+
+function generateImplementationPrompt(spec) {
+  if (!spec) return '';
+  return `Task:
+Improve the ${spec.problem} flow based on user feedback.
+
+Files:
+${spec.suggestedFiles.map(file => `- ${file}`).join('\n')}
+
+Acceptance Criteria:
+${spec.acceptanceCriteria.map(line => `- ${line}`).join('\n')}
+
+Verification:
+${spec.manualVerificationSteps.map((line, i) => `${i + 1}. ${line}`).join('\n')}
+
+Constraints:
+- Keep GitHub Pages compatibility
+- No new backend
+- No new dependencies`;
+}
+
+function renderImplPrompt() {
+  const topCluster = getPriorityRanking()[0];
+  const spec = generatePRSpec(topCluster);
+  if (!spec) return 'No Implementation Prompt generated.';
+
+  return `<div class="impl-prompt-heading">
+      <h3>Implementation Prompt</h3>
+      <button id="copyImplPromptBtn" class="primary" type="button">Copy Implementation Prompt</button>
+    </div>
+    <div class="impl-prompt-body">
+      <pre id="implPromptOutput">${escapeHtml(generateImplementationPrompt(spec))}</pre>
     </div>`;
 }
 
@@ -572,8 +595,10 @@ function markdownExport() {
   const priorities = ranking.slice(0, 3).map((cluster, index) => `${index + 1}. **${cluster.title}** — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}\n   - Representative example: ${cluster.representativeExample}`).join('\n');
   const clusters = getIssueClusters().map((cluster) => `- **${cluster.title}** — frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}\n  - Representative example: ${cluster.representativeExample}`).join('\n');
   const rows = state.results.map((item) => `- **${item.decision} / ${item.type} / ${item.severity}** — ${item.extractedProblem}\n  - Actionability: ${item.actionability}\n  - Evidence: ${item.evidenceLevel}\n  - Why classified this way: ${(item.reasons || []).join(', ')}\n  - Suggested fix: ${item.suggestedFix}\n  - Original: ${item.originalPost}`).join('\n');
-  const prSpec = buildPRSpecMarkdown(generatePRSpec(ranking[0]));
-  return `# Signal-to-Fix Analysis\n\n## Priority Ranking\n\n${priorities || 'No priorities yet.'}\n\n## PR Spec\n\n${prSpec || 'No PR Spec generated.'}\n\n## Issue Clusters\n\n${clusters || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
+  const spec = generatePRSpec(ranking[0]);
+  const prSpec = buildPRSpecMarkdown(spec);
+  const implPrompt = generateImplementationPrompt(spec);
+  return `# Signal-to-Fix Analysis\n\n## Priority Ranking\n\n${priorities || 'No priorities yet.'}\n\n## PR Spec\n\n${prSpec || 'No PR Spec generated.'}\n\n## Implementation Prompt\n\n\`\`\`text\n${implPrompt || 'No Implementation Prompt generated.'}\n\`\`\`\n\n## Issue Clusters\n\n${clusters || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
 }
 
 async function copyPrompt() {
@@ -636,11 +661,28 @@ elements.loadSampleBtn.addEventListener('click', loadSampleFeedback);
 elements.copyPromptBtn.addEventListener('click', copyPrompt);
 elements.copyPromptInlineBtn.addEventListener('click', copyPrompt);
 elements.exportMdBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.md`, 'text/markdown', markdownExport()));
-elements.exportJsonBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({ context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value }, priorityRanking: getPriorityRanking(), prSpec: generatePRSpec(getPriorityRanking()[0]), issueClusters: getIssueClusters(), results: state.results, codexPrompt: state.prompt || buildCodexPrompt() }, null, 2)));
+elements.exportJsonBtn.addEventListener('click', () => {
+  const topCluster = getPriorityRanking()[0];
+  const spec = generatePRSpec(topCluster);
+  downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({
+    context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value },
+    priorityRanking: getPriorityRanking(),
+    prSpec: spec,
+    implementationPrompt: generateImplementationPrompt(spec),
+    issueClusters: getIssueClusters(),
+    results: state.results,
+    codexPrompt: state.prompt || buildCodexPrompt()
+  }, null, 2));
+});
 elements.clearBtn.addEventListener('click', clearAll);
 elements.prSpecSection.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'copyPrSpecBtn') {
     copyPrSpec();
+  }
+});
+elements.implPromptSection.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'copyImplPromptBtn') {
+    copyImplPrompt();
   }
 });
 [elements.productName, elements.productUrl, elements.targetArea, elements.feedbackInput].forEach((input) => input.addEventListener('input', saveState));
@@ -662,6 +704,28 @@ async function copyPrSpec() {
       document.body.removeChild(textarea);
     }
     elements.statusMessage.textContent = 'PR Spec copied to clipboard.';
+  } catch (error) {
+    elements.statusMessage.textContent = 'Copy failed.';
+  }
+}
+
+async function copyImplPrompt() {
+  const output = document.getElementById('implPromptOutput');
+  if (!output) return;
+  const text = output.textContent;
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    elements.statusMessage.textContent = 'Implementation Prompt copied to clipboard.';
   } catch (error) {
     elements.statusMessage.textContent = 'Copy failed.';
   }
