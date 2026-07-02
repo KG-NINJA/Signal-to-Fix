@@ -139,14 +139,28 @@ function analyzePost(post, index) {
   const usefulScore = countMatches(text, RULES.useful);
   const hasProductSignal = getProductNameSignal(text);
   const evidence = evidenceLevel(text);
-  const hasConcreteSignal = usefulScore > 0 || hasProductSignal || evidence !== 'vague opinion';
-  const type = hasConcreteSignal ? classifyType(text) : (includesAny(text, RULES.types.praise) ? 'praise' : 'noise');
+
+  const engagementBaitTerms = ['thoughts?', 'agree?', 'bookmark this', 'follow for more', 'retweet to win'];
+  const hasEngagementBait = includesAny(text, engagementBaitTerms);
+  const hasExcessiveNoise = includesAny(text, ['airdrop', 'giveaway', 'promo', '100x', 'wagmi']) ||
+                           hasExcessiveHashtags(post) ||
+                           hasExcessiveEmojis(post) ||
+                           hasEngagementBait;
+
+  let decision, type;
+  if (hasExcessiveNoise) {
+    decision = 'discard';
+    type = 'noise';
+  } else {
+    const hasConcreteSignal = usefulScore > 0 || hasProductSignal || evidence !== 'vague opinion';
+    type = hasConcreteSignal ? classifyType(text) : (includesAny(text, RULES.types.praise) ? 'praise' : 'noise');
+    decision = 'keep';
+    if (!hasConcreteSignal && noiseScore >= 2) decision = 'discard';
+    else if (type === 'praise' || type === 'noise' || evidence === 'vague opinion' || noiseScore > usefulScore) decision = 'reduce';
+  }
+
   const reasons = buildReasons(text, post, type, noiseScore, usefulScore, evidence, hasProductSignal);
   const actionabilityScore = usefulScore + (evidence === 'vague opinion' ? 0 : 1) + (hasProductSignal ? 1 : 0) + (type === 'onboarding complaint' ? 1 : 0) + (type !== 'noise' && type !== 'praise' ? 1 : 0);
-
-  let decision = 'keep';
-  if (!hasConcreteSignal && noiseScore >= 2) decision = 'discard';
-  else if (type === 'praise' || type === 'noise' || evidence === 'vague opinion' || noiseScore > usefulScore) decision = 'reduce';
 
   const severity = includesAny(text, RULES.severityHigh) ? 'high' : includesAny(text, RULES.severityMedium) ? 'medium' : 'low';
   const actionability = actionabilityScore >= 3 ? 'high' : actionabilityScore >= 1 ? 'medium' : 'low';
@@ -236,9 +250,9 @@ function render() {
   elements.issueClusters.className = state.results.length ? 'issue-clusters' : 'issue-clusters empty-state';
   elements.issueClusters.innerHTML = state.results.length ? renderIssueClusters() : 'Issue clusters will appear after analysis.';
   elements.prSpecSection.className = state.results.length ? 'pr-spec-section' : 'pr-spec-section empty-state';
-  elements.prSpecSection.innerHTML = state.results.length ? renderPRSpec() : 'PR Spec will appear after analysis.';
-  elements.implPromptSection.className = state.results.length ? 'impl-prompt-section' : 'impl-prompt-section empty-state';
-  elements.implPromptSection.innerHTML = state.results.length ? renderImplPrompt() : 'Implementation Prompt will appear after analysis.';
+  elements.prSpecSection.innerHTML = state.results.length && getPriorityRanking().length ? renderPRSpec() : 'PR Spec will appear after analysis.';
+  elements.implPromptSection.className = state.results.length && getPriorityRanking().length ? 'impl-prompt-section' : 'impl-prompt-section empty-state';
+  elements.implPromptSection.innerHTML = state.results.length && getPriorityRanking().length ? renderImplPrompt() : 'Implementation Prompt will appear after analysis.';
   elements.resultsList.className = state.results.length ? 'results-list' : 'results-list empty-state';
   elements.resultsList.innerHTML = state.results.length ? state.results.map(resultCard).join('') : 'No analysis yet.';
 }
@@ -276,12 +290,14 @@ function highestEvidenceLevel(items) {
 }
 
 function getIssueClusters() {
-  const groups = state.results.reduce((acc, item) => {
-    const title = clusterTitleFor(item);
-    acc[title] = acc[title] || [];
-    acc[title].push(item);
-    return acc;
-  }, {});
+  const groups = state.results
+    .filter(item => item.decision !== 'discard' && item.type !== 'noise')
+    .reduce((acc, item) => {
+      const title = clusterTitleFor(item);
+      acc[title] = acc[title] || [];
+      acc[title].push(item);
+      return acc;
+    }, {});
   const severityOrder = { high: 3, medium: 2, low: 1 };
   const actionabilityOrder = { high: 3, medium: 2, low: 1 };
 
