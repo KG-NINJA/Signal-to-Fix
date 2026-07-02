@@ -232,6 +232,8 @@ footer { color: var(--muted); padding: 18px 4px 0; text-align: center; font-size
   .prompt-actions button { width: 100%; }
   .prompt-panel textarea { min-height: 360px; font-size: 0.9rem; }
 }
+.prompt-actions { display: flex; justify-content: flex-end; margin: -6px 0 10px; }
+.prompt-panel textarea { min-height: 430px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.55; }
 
 .issue-clusters {
   margin-bottom: 14px;
