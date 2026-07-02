@@ -1,43 +1,85 @@
-# X Search Launcher (X検索ランチャー)
+# Signal-to-Fix
 
-X (旧Twitter) の高度な検索演算子を視覚的に組み立てて、公式の検索結果ページを素早く開くための超軽量Webツールです。
+Signal-to-Fix turns messy X/Twitter feedback posts into structured product improvement tasks that can be handed to Codex.
 
-## 特徴
-- **X API不要・OAuth不要**: APIキー、Bearer Token、CLIENT_SECRET等は一切不要です。
-- **超軽量・高速起動**: HTML/CSS/JavaScriptのみの静的ファイル構成で、ビルドやライブラリのインストールも必要ありません。
-- **プライバシー配慮**: すべての処理はブラウザ上で完結し、最近のクエリ履歴もローカルストレージ（localStorage）のみに保存されます。外部サーバーへの通信は発生しません。
-- **Noise Reduction**: Low / Medium / High のプリセットで明らかなスパム・釣り・宣伝ノイズの除外語を検索クエリへ自動追加できます。英語圏の engagement bait / promo spam にも対応し、手入力の除外ワードは保持されます。`top30_repost_blacklist.json` の高頻度リポスト系フレーズもMedium以上で除外します。
-- **AIエージェント対応**: `agent-use.json` と `agent-api.js` を公開し、AIエージェントが機械可読にクエリ生成仕様を使えます。エージェント利用は `x402-payment.json` の既存x402エンドポイントで課金する前提です。
-- **国際検索対応**: 既定は `lang:` を付けない Global 検索です。English / Japanese / Spanish / French / German / Korean / Chinese を選択できます。
-- **レスポンシブデザイン**: スマートフォンとPCの双方に最適化されたダークモード基調のUI。
+It is a standalone, static GitHub Pages app built with plain HTML, CSS, and JavaScript. It does not use a backend, external libraries, AI APIs, the X API, or the GitHub API.
 
-## 注意事項（免責事項）
-- 本ツールは**X公式検索ページを開く検索支援ツール**です。
-- X APIを使用していないため、**本ツールの画面内に検索結果を表示したり、自動投稿を行ったりする機能はありません**。
+## Why it exists
 
-## 使い方
-1. 入力フォームにキーワードや除外ワード、日付、最小いいね数、フィルター等の検索条件を入力します。英語検索では Language を English、または国際横断なら Global のまま使います。
-2. 条件の入力に合わせて、「生成されたクエリ」エリアにX検索用コマンドがリアルタイムに組み立てられます。
-3. 必要に応じて Noise Reduction をONにし、英語圏の spam / engagement bait / promo noise を検索前に除外します。
-4. 「最新で検索」または「話題で検索」ボタンをクリックすると、新規タブでXの公式検索画面が開きます。
-5. コピーボタンで組み立てられたクエリテキストのみをクリップボードに取得することも可能です。
+Useful product feedback on X/Twitter is often mixed with promotion, engagement bait, vague praise, and spam. Signal-to-Fix gives product builders a simple manual workflow:
 
+1. Search X/Twitter yourself.
+2. Paste candidate posts into the app.
+3. Let simple local rules filter obvious noise.
+4. Review structured product issues.
+5. Export a small, practical Codex prompt for implementation.
 
-## AIエージェント利用とx402
-- エージェントは `agent-use.json` を読み、`agent-api.js` の `HyperXosistAgent.buildQuery(input)` または `buildSearchUrl(input)` を使えます。
-- AIエージェントによる自動利用・商用利用は x402 支払い対象です。
-- `x402-payment.json` は `https://kg-ninja-x402-revenue-gate-mainnet-staging.fuwafuwow.workers.dev/hyperxosist-query` のHyperXosist専用x402 paid routeへ接続済みです。
-- GitHub Pagesは静的配信のため、支払い検証・settlement・wallet・priceは既存x402 Worker側で扱います。AIエージェントは `x402-payment.json` の `paymentEndpoint` にPOSTし、未払い402を受け取ってからx402支払い付きで再試行します。
-## デプロイ方法 (GitHub Pagesへの公開)
-本リポジトリはビルドが不要なため、そのままGitHub Pagesで公開することができます。
+The goal of v1 is clarity, not automation.
 
-1. 本プロジェクトのファイル一式をGitHubリポジトリにプッシュします。
-2. リポジトリの `Settings` > `Pages` に移動します。
-3. **Build and deployment** の Source から `Deploy from a branch` を選択します。
-4. Branch に `main` (または `master`) と `/ (root)` を設定し、`Save` をクリックします。
-5. 数分で提供されたURL（例: `https://<username>.github.io/<repository-name>/`）で本ツールが動作します。
+## How to use it
 
+1. Open `index.html` locally or deploy the repository to GitHub Pages.
+2. Fill in the product context:
+   - Product name
+   - Product URL
+   - Target area, such as `iOS app`, `Android app`, `landing page`, `docs`, `checkout`, `onboarding`, `API`, or `pricing page`
+3. Paste X/Twitter posts into the feedback box, one post per line.
+4. Click **Analyze Feedback**, or use **Load sample feedback** to try the built-in mixed English/Japanese examples.
+5. Review each result:
+   - decision: keep, reduce, or discard
+   - type
+   - severity
+   - actionability
+   - evidence level
+   - extracted problem
+   - suggested fix
+   - original post
+   - short reason labels explaining the classification
+6. Use the export buttons:
+   - **Copy Codex Prompt** copies a practical implementation prompt.
+   - **Export Markdown** downloads the analysis and prompt as `.md`.
+   - **Export JSON** downloads structured results as `.json`.
+   - **Clear** resets inputs and results after confirmation.
 
+## What v1 does
 
+- Runs fully in the browser.
+- Treats each pasted line as one feedback item.
+- Uses editable keyword and scoring rules in `app.js`.
+- Discards or reduces obvious noise such as giveaways, referral spam, engagement bait, excessive hashtags, excessive emojis, and vague hype.
+- Keeps or boosts concrete product complaints, including English and Japanese terms for bugs, errors, slowness, refunds, cancellation, docs, API, and feature requests.
+- Generates a Codex-ready prompt that asks for a small first improvement pass and explicitly says not to overbuild.
+- Persists product context, pasted feedback, analysis results, and the generated prompt in `localStorage`.
 
+## What v1 does not do
 
+- It does not call AI APIs.
+- It does not use the X/Twitter API.
+- It does not fetch posts automatically.
+- It does not post to GitHub or create GitHub issues.
+- It does not use a backend, database, authentication, or build tools.
+- It does not guarantee perfect classification.
+
+## Limitations
+
+Signal-to-Fix v1 is intentionally rule-based. It can miss sarcasm, mixed-language nuance, screenshots without text, duplicate patterns, and issues that require domain knowledge. Treat the output as a triage aid, not a final product decision.
+
+Because all processing is local, pasted data stays in your browser. However, browser `localStorage` is not encrypted, so do not paste secrets or private user data.
+
+## Future ideas
+
+- X API integration for authenticated search and import.
+- MCP integration for agent workflows.
+- GitHub issue export.
+- Screenshot clustering.
+- Multi-post pattern detection.
+
+## Deploying to GitHub Pages
+
+No build step is required.
+
+1. Push this repository to GitHub.
+2. Open repository **Settings** → **Pages**.
+3. Choose **Deploy from a branch**.
+4. Select the main branch and `/ (root)`.
+5. Save and open the published Pages URL.
