@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Signal-to-Fix</title>
   <meta name="description" content="Turn noisy X/Twitter feedback into Codex-ready product improvement tasks.">
+  <link rel="alternate" type="application/json" href="agent-use.json" title="Signal-to-Fix Agent Use">
+  <link rel="payment" type="application/json" href="x402-payment.json">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -86,6 +88,15 @@
           <li>Use <strong>reduce</strong> items only if they repeat.</li>
           <li>Copy the Codex Prompt into Codex Web.</li>
           <li>Ask for one small improvement PR.</li>
+        </ul>
+      </section>
+
+      <section class="panel next-panel" aria-labelledby="agentTitle">
+        <h2 id="agentTitle">Agent Workflow</h2>
+        <ul class="next-steps">
+          <li>AI agents read <a href="agent-use.json"><code>agent-use.json</code></a> and <a href="x402-payment.json"><code>x402-payment.json</code></a>.</li>
+          <li>Feedback sourcing uses <a href="https://kg-ninja.github.io/HyperXosist-Agent/">HyperXosist-Agent</a> through the existing x402 paid endpoint.</li>
+          <li>Signal-to-Fix downstream outputs use only <strong>keep</strong> items.</li>
         </ul>
       </section>
 

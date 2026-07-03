@@ -1,0 +1,55 @@
+{
+  "name": "Signal-to-Fix Agent Use",
+  "version": "1.0.0",
+  "description": "Machine-readable entrypoint for AI agents that turn X/Twitter feedback into keep-only PR specs and implementation prompts.",
+  "requiresPaymentForAgentUse": true,
+  "payment": {
+    "scheme": "x402",
+    "manifest": "x402-payment.json",
+    "endpoint": "https://kg-ninja-x402-revenue-gate-mainnet-staging.fuwafuwow.workers.dev/hyperxosist-query",
+    "paymentOptionsEndpoint": "https://kg-ninja-x402-revenue-gate-mainnet-staging.fuwafuwow.workers.dev/payment-options.json",
+    "method": "POST",
+    "expectedUnpaidStatus": 402,
+    "expectedPaidStatus": 200,
+    "instruction": "AI agents should use the linked HyperXosist paid x402 route to generate/search candidate X feedback, then pass only resulting feedback text into Signal-to-Fix for keep-only PR spec generation."
+  },
+  "entrypoints": {
+    "humanUi": "index.html",
+    "paymentManifest": "x402-payment.json",
+    "linkedSearchAgent": "https://kg-ninja.github.io/HyperXosist-Agent/agent-use.json",
+    "linkedSearchAgentApiScript": "https://kg-ninja.github.io/HyperXosist-Agent/agent-api.js"
+  },
+  "agentUsePolicy": {
+    "humanBrowserUse": "free",
+    "aiAgentSearchUse": "paid-via-existing-x402-worker",
+    "signalAnalysisSourceOfTruth": "decision === \"keep\"",
+    "mustNotUseReduceOrDiscardDownstream": true,
+    "paymentVerifier": "https://kg-ninja-x402-revenue-gate-mainnet-staging.fuwafuwow.workers.dev/hyperxosist-query"
+  },
+  "workflow": [
+    "Read this manifest.",
+    "Read https://kg-ninja.github.io/HyperXosist-Agent/agent-use.json.",
+    "POST search input to the configured x402 endpoint and complete payment.",
+    "Use the paid HyperXosist result to collect candidate X/Twitter feedback.",
+    "Paste feedback into Signal-to-Fix.",
+    "Use only decision === \"keep\" items for clusters, ranking, PR specs, implementation prompts, Codex prompts, Markdown export, and JSON export."
+  ],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "productName": { "type": "string" },
+      "productUrl": { "type": "string" },
+      "targetArea": { "type": "string" },
+      "feedback": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "required": ["feedback"]
+  },
+  "linkedServices": {
+    "hyperxosistAgent": "https://kg-ninja.github.io/HyperXosist-Agent/",
+    "hyperxosistAgentUse": "https://kg-ninja.github.io/HyperXosist-Agent/agent-use.json",
+    "hyperxosistPaymentManifest": "https://kg-ninja.github.io/HyperXosist-Agent/x402-payment.json"
+  }
+}

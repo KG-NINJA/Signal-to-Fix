@@ -4,6 +4,8 @@ Signal-to-Fix turns messy X/Twitter feedback posts into structured product impro
 
 It is a standalone, static GitHub Pages app built with plain HTML, CSS, and JavaScript. It does not use a backend, external libraries, AI APIs, the X API, or the GitHub API.
 
+For AI-agent operation, Signal-to-Fix links to HyperXosist-Agent for paid X/Twitter feedback sourcing through the existing x402 Worker. Human browser analysis remains local and free.
+
 ## Why it exists
 
 Useful product feedback on X/Twitter is often mixed with promotion, engagement bait, vague praise, and spam. Signal-to-Fix gives product builders a simple manual workflow:
@@ -50,6 +52,7 @@ The goal of v1 is clarity, not automation.
 - Keeps or boosts concrete product complaints, including English and Japanese terms for bugs, errors, slowness, refunds, cancellation, docs, API, and feature requests.
 - Generates a Codex-ready prompt that asks for a small first improvement pass and explicitly says not to overbuild.
 - Persists product context, pasted feedback, analysis results, and the generated prompt in `localStorage`.
+- Exposes `agent-use.json` and `x402-payment.json` so AI agents can discover the paid HyperXosist sourcing flow before using Signal-to-Fix outputs.
 
 ## What v1 does not do
 
@@ -59,6 +62,15 @@ The goal of v1 is clarity, not automation.
 - It does not post to GitHub or create GitHub issues.
 - It does not use a backend, database, authentication, or build tools.
 - It does not guarantee perfect classification.
+
+## AI agent workflow with HyperXosist-Agent
+
+- Signal-to-Fix agent manifest: `agent-use.json`
+- Signal-to-Fix payment manifest: `x402-payment.json`
+- Linked search agent: `https://kg-ninja.github.io/HyperXosist-Agent/agent-use.json`
+- Existing x402 endpoint: `https://kg-ninja-x402-revenue-gate-mainnet-staging.fuwafuwow.workers.dev/hyperxosist-query`
+
+AI agents should pay through the existing x402 endpoint for HyperXosist query generation, gather candidate X/Twitter feedback, then paste/analyze that feedback in Signal-to-Fix. Downstream Signal-to-Fix outputs use only items where `decision === "keep"`.
 
 ## Limitations
 

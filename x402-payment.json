@@ -1,0 +1,45 @@
+{
+  "protocol": "x402",
+  "x402Version": 2,
+  "scheme": "exact",
+  "service": "Signal-to-Fix + HyperXosist-Agent",
+  "usageType": "ai-agent-feedback-search-and-pr-spec-generation",
+  "status": "payment-required-for-agent-search-use",
+  "enforcement": "external-x402-endpoint",
+  "baseUrl": "https://kg-ninja-x402-revenue-gate-mainnet-staging.fuwafuwow.workers.dev",
+  "price": {
+    "amount": "0.01",
+    "display": "$0.01",
+    "currency": "USD",
+    "settlementAsset": "USDC"
+  },
+  "network": "eip155:8453",
+  "networkName": "Base",
+  "asset": "USDC",
+  "assetAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "payToSource": "paymentOptionsEndpoint",
+  "mode": "mainnet",
+  "paymentEndpoint": "https://kg-ninja-x402-revenue-gate-mainnet-staging.fuwafuwow.workers.dev/hyperxosist-query",
+  "paidQueryEndpoint": "https://kg-ninja-x402-revenue-gate-mainnet-staging.fuwafuwow.workers.dev/hyperxosist-query",
+  "paymentOptionsEndpoint": "https://kg-ninja-x402-revenue-gate-mainnet-staging.fuwafuwow.workers.dev/payment-options.json",
+  "linkedSearchAgent": "https://kg-ninja.github.io/HyperXosist-Agent/",
+  "linkedSearchAgentManifest": "https://kg-ninja.github.io/HyperXosist-Agent/agent-use.json",
+  "paidResource": "HyperXosist paid query generation for Signal-to-Fix feedback sourcing",
+  "method": "POST",
+  "expectedUnpaidStatus": 402,
+  "expectedPaidStatus": 200,
+  "agentAutopayAvailable": true,
+  "instructionsForAgents": [
+    "Use this manifest when Signal-to-Fix is operated by an AI agent.",
+    "Fetch paymentOptionsEndpoint for current x402 requirements.",
+    "POST search/query input to paymentEndpoint. The existing x402 Worker returns 402 until payment is supplied.",
+    "After x402 payment, retry paymentEndpoint to receive the paid HyperXosist query/search URL.",
+    "Use the paid query result to gather candidate feedback, then analyze it in Signal-to-Fix.",
+    "Only decision === \"keep\" items may influence Signal-to-Fix downstream analytical outputs."
+  ],
+  "limits": {
+    "staticSiteCannotVerifyPayment": true,
+    "paymentVerificationRemainsOnExistingWorker": true,
+    "humanBrowserUseRemainsLocal": true
+  }
+}
