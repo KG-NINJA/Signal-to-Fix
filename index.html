@@ -72,6 +72,8 @@
         </div>
         <div id="resultsSummary" class="results-summary empty-state">Run analysis to see a short workflow summary.</div>
         <div id="priorityRanking" class="priority-ranking empty-state">Priority ranking will appear after analysis.</div>
+        <div id="prSpecSection" class="pr-spec-section empty-state">PR Spec will appear after analysis.</div>
+        <div id="implPromptSection" class="impl-prompt-section empty-state">Implementation Prompt will appear after analysis.</div>
         <div id="issueClusters" class="issue-clusters empty-state">Issue clusters will appear after analysis.</div>
         <div id="resultsList" class="results-list empty-state">No analysis yet.</div>
       </section>
@@ -85,17 +87,6 @@
           <li>Copy the Codex Prompt into Codex Web.</li>
           <li>Ask for one small improvement PR.</li>
         </ul>
-      </section>
-
-      <section class="panel prompt-panel" aria-labelledby="promptTitle">
-        <div class="section-heading">
-          <h2 id="promptTitle">Codex-ready Prompt</h2>
-          <p>Paste this into Codex Web to request a small product improvement.</p>
-        </div>
-        <div class="prompt-actions">
-          <button id="copyPromptInlineBtn" class="primary" type="button">Copy Codex Prompt</button>
-        </div>
-        <textarea id="promptOutput" rows="18" readonly placeholder="Analyze feedback to generate a Codex prompt."></textarea>
       </section>
 
       <section class="panel prompt-panel" aria-labelledby="promptTitle">

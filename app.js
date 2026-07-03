@@ -8,9 +8,8 @@ const ORIGINAL_PREVIEW_LIMIT = 600;
 const ONBOARDING_HELP_TERMS = [
   'what to paste', "don't understand", 'dont understand', 'confusing', 'when to use',
   'how to use', 'where to use', 'getting started', 'first use', 'guide', 'instructions',
-  'how do i', 'how to', 'not sure how',
   '使い方', '何を貼る', 'わからない', '分からない', '迷う', 'どこで使う',
-  'どこで使え', 'いつ使う', 'ガイド', '説明', '初回', '最初', 'どうやって', '教えて'
+  'どこで使え', 'いつ使う', 'ガイド', '説明', '初回', '最初'
 ];
 
 const RULES = {
@@ -32,10 +31,11 @@ const RULES = {
   ],
   // Classification keywords. First strong match wins, then fallback scoring is used.
   types: {
-    bug: ['bug', 'broken', 'crash', 'error', 'failed', 'stuck', 'does not work', 'crashes', 'security', 'vulnerability', 'exploit', 'leak', 'login', 'sign in', 'sign up', 'エラー', '壊れた', '落ちる', '開かない', 'ログインできない', 'バグ', '脆弱性', 'セキュリティ', '漏洩'],
+    'login failure': ['login', 'sign in', 'sign up', 'ログイン', 'サインイン'],
+    bug: ['bug', 'broken', 'crash', 'error', 'failed', 'stuck', 'does not work', 'crashes', 'security', 'vulnerability', 'exploit', 'leak', 'エラー', '壊れた', '落ちる', '開かない', 'ログインできない', 'バグ', '脆弱性', 'セキュリティ', '漏洩'],
     'pricing complaint': ['expensive', 'price', 'pricing', 'billing', 'refund', 'cancel', '課金', '高い', '解約', '返金'],
     'onboarding complaint': ONBOARDING_HELP_TERMS,
-    'UX complaint': ['confusing', 'hard to use', 'slow', 'performance', 'lag', 'hang', '使いにくい', 'わかりにくい', '重い', '遅い', 'annoying', 'clunky', 'too many steps', 'ラグ'],
+    'UX complaint': ['confusing', 'hard to use', 'slow', '使いにくい', 'わかりにくい', '重い', '遅い', 'annoying', 'clunky', 'too many steps'],
     'feature request': ['missing', 'please add', 'need', 'wish', 'feature request', '追加してほしい', '対応してほしい', 'support'],
     'docs complaint': ['docs', 'documentation', 'guide', 'tutorial', 'api reference', 'example'],
     praise: ['love', 'great', 'awesome', 'thanks', 'amazing', '便利', '最高'],
@@ -52,7 +52,8 @@ const RULES = {
 };
 
 const $ = (id) => document.getElementById(id);
-const state = { results: [], prompt: '' };
+const KEEP_DECISION = 'keep';
+const state = { results: [], clusters: [], ranking: [], prompt: '' };
 
 const elements = {
   productName: $('productName'),
@@ -71,6 +72,8 @@ const elements = {
   priorityRanking: $('priorityRanking'),
   issueClusters: $('issueClusters'),
   resultsList: $('resultsList'),
+  prSpecSection: $('prSpecSection'),
+  implPromptSection: $('implPromptSection'),
   summaryText: $('summaryText'),
   promptOutput: $('promptOutput')
 };
@@ -137,14 +140,25 @@ function analyzePost(post, index) {
   const usefulScore = countMatches(text, RULES.useful);
   const hasProductSignal = getProductNameSignal(text);
   const evidence = evidenceLevel(text);
-  const hasConcreteSignal = usefulScore > 0 || hasProductSignal || evidence !== 'vague opinion';
-  const type = hasConcreteSignal ? classifyType(text) : (includesAny(text, RULES.types.praise) ? 'praise' : 'noise');
+
+  const isNoiseOverride = includesAny(text, RULES.noise) ||
+                           hasExcessiveHashtags(post) ||
+                           hasExcessiveEmojis(post);
+
+  let decision, type;
+  if (isNoiseOverride) {
+    decision = 'discard';
+    type = 'noise';
+  } else {
+    const hasConcreteSignal = usefulScore > 0 || hasProductSignal || evidence !== 'vague opinion';
+    type = hasConcreteSignal ? classifyType(text) : (includesAny(text, RULES.types.praise) ? 'praise' : 'noise');
+    decision = 'keep';
+    if (!hasConcreteSignal && noiseScore >= 2) decision = 'discard';
+    else if (type === 'praise' || type === 'noise' || evidence === 'vague opinion' || noiseScore > usefulScore) decision = 'reduce';
+  }
+
   const reasons = buildReasons(text, post, type, noiseScore, usefulScore, evidence, hasProductSignal);
   const actionabilityScore = usefulScore + (evidence === 'vague opinion' ? 0 : 1) + (hasProductSignal ? 1 : 0) + (type === 'onboarding complaint' ? 1 : 0) + (type !== 'noise' && type !== 'praise' ? 1 : 0);
-
-  let decision = 'keep';
-  if (!hasConcreteSignal && noiseScore >= 2) decision = 'discard';
-  else if (type === 'praise' || type === 'noise' || noiseScore > usefulScore) decision = 'reduce';
 
   const severity = includesAny(text, RULES.severityHigh) ? 'high' : includesAny(text, RULES.severityMedium) ? 'medium' : 'low';
   const actionability = actionabilityScore >= 3 ? 'high' : actionabilityScore >= 1 ? 'medium' : 'low';
@@ -187,14 +201,20 @@ function suggestFix(post, type, severity) {
 function analyzeFeedback() {
   const posts = elements.feedbackInput.value.split('\n').map((line) => line.trim()).filter(Boolean);
   state.results = posts.map(analyzePost);
-  state.prompt = buildCodexPrompt();
+  refreshDerivedOutputs();
   render();
   saveState();
   elements.statusMessage.textContent = posts.length ? `Analyzed ${posts.length} feedback item${posts.length === 1 ? '' : 's'}.` : 'Paste at least one post to analyze.';
 }
 
 function usefulResults() {
-  return state.results.filter((item) => item.decision !== 'discard' && item.type !== 'noise');
+  return state.results.filter((item) => item.decision === KEEP_DECISION);
+}
+
+function refreshDerivedOutputs() {
+  state.clusters = getIssueClusters();
+  state.ranking = getPriorityRanking();
+  state.prompt = buildCodexPrompt();
 }
 
 function buildCodexPrompt() {
@@ -202,15 +222,18 @@ function buildCodexPrompt() {
   const productUrl = elements.productUrl.value.trim() || '[product URL]';
   const targetArea = elements.targetArea.value.trim() || '[target area]';
   const useful = usefulResults().sort((a, b) => scoreResult(b) - scoreResult(a)).slice(0, 8);
-  const ranking = getPriorityRanking();
+  const ranking = state.ranking;
   const topPriorities = ranking.slice(0, 3).map((cluster, index) => `${index + 1}. ${cluster.title} — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}; evidence: ${cluster.evidenceLevel}
    Representative example: ${cluster.representativeExample}`).join('\n') || '1. No clustered priority yet; do not invent work without stronger evidence.';
   const topCluster = ranking[0];
+  const spec = topCluster ? generatePRSpec(topCluster) : null;
   const evidence = useful.length ? useful.map((item) => `- ${item.evidenceLevel}: ${item.originalPost}`).join('\n') : '- No concrete evidence captured yet.';
+  const prSpec = spec ? buildPRSpecMarkdown(spec) : 'No PR spec available.';
   const issues = useful.length ? useful.slice(0, 5).map((item, i) => `${i + 1}. ${item.extractedProblem}\n   - Type: ${item.type}\n   - Severity: ${item.severity}\n   - Actionability: ${item.actionability}\n   - Evidence level: ${item.evidenceLevel}\n   - Why classified this way: ${(item.reasons || ['no reason saved']).join(', ')}\n   - Suggested fix: ${item.suggestedFix}`).join('\n') : '1. No prioritized issue yet; do not invent work without stronger evidence.';
   const firstPass = topCluster ? `- Default first PR: address ${topCluster.title}.\n- Use this representative example as acceptance context: ${topCluster.representativeExample}` : '- Ask for more concrete feedback or reproduce the issue manually before changing product code.';
 
-  return `Title:\nImprove ${productName} based on X/Twitter feedback\n\nContext:\n- Product: ${productName}\n- Product URL: ${productUrl}\n- Target area: ${targetArea}\n\nEvidence:\n${evidence}\n\nTop priorities:\n${topPriorities}\n\nPrioritized issues:\n${issues}\n\nRecommended small first pass:\n${firstPass}\n- Keep changes small, focused, and easy to review.\n- Prefer the highest-ranked cluster if time is limited.\n\nNon-goals:\n- Do not redesign the entire app.\n- Do not add APIs, authentication, databases, or new dependencies.\n- Do not use the GitHub API unless it is already configured in this repository.\n- Do not overbuild beyond the evidence above.\n\nScreenshot instruction:\n- If browser/computer-use is available, capture before/after screenshots for the changed flow or UI.\n- If screenshots are not possible, explain why and include a concise manual verification note.\n\nCompatibility:\n- Keep the app stable and GitHub Pages compatible.`;
+  const scoreText = topCluster ? ` (Priority Score: ${topCluster.priorityScore}, Frequency: ${topCluster.frequency})` : '';
+  return `Title:\nImprove ${productName} based on X/Twitter feedback\n\nContext:\n- Product: ${productName}\n- Product URL: ${productUrl}\n- Target area: ${targetArea}\n\nEvidence:\n${evidence}\n\nTop priorities:\n${topPriorities}\n\nPR Spec for Highest Priority:${scoreText}\n${prSpec}\n\nPrioritized issues:\n${issues}\n\nRecommended small first pass:\n${firstPass}\n- Keep changes small, focused, and easy to review.\n- Prefer the highest-ranked cluster if time is limited.\n\nNon-goals:\n- Do not redesign the entire app.\n- Do not add APIs, authentication, databases, or new dependencies.\n- Do not use the GitHub API unless it is already configured in this repository.\n- Do not overbuild beyond the evidence above.\n\nScreenshot instruction:\n- If browser/computer-use is available, capture before/after screenshots for the changed flow or UI.\n- If screenshots are not possible, explain why and include a concise manual verification note.\n\nCompatibility:\n- Keep the app stable and GitHub Pages compatible.`;
 }
 
 function scoreResult(item) {
@@ -224,14 +247,28 @@ function render() {
   const kept = state.results.filter((r) => r.decision === 'keep').length;
   const reduced = state.results.filter((r) => r.decision === 'reduce').length;
   const discarded = state.results.filter((r) => r.decision === 'discard').length;
+  const ranking = state.ranking;
+  const clusters = state.clusters;
+  const topCluster = ranking[0];
+  const spec = topCluster ? generatePRSpec(topCluster) : null;
+
   elements.summaryText.textContent = state.results.length ? `${kept} keep, ${reduced} reduce, ${discarded} discard.` : 'Analyze feedback to see kept, reduced, and discarded posts.';
   elements.promptOutput.value = state.prompt || '';
   elements.resultsSummary.className = state.results.length ? 'results-summary' : 'results-summary empty-state';
   elements.resultsSummary.innerHTML = state.results.length ? resultSummaryCard(kept, reduced, discarded) : 'Run analysis to see a short workflow summary.';
-  elements.priorityRanking.className = state.results.length ? 'priority-ranking' : 'priority-ranking empty-state';
-  elements.priorityRanking.innerHTML = state.results.length ? renderPriorityRanking() : 'Priority ranking will appear after analysis.';
-  elements.issueClusters.className = state.results.length ? 'issue-clusters' : 'issue-clusters empty-state';
-  elements.issueClusters.innerHTML = state.results.length ? renderIssueClusters() : 'Issue clusters will appear after analysis.';
+
+  elements.priorityRanking.className = state.results.length && ranking.length ? 'priority-ranking' : 'priority-ranking empty-state';
+  elements.priorityRanking.innerHTML = state.results.length && ranking.length ? renderPriorityRanking(ranking) : 'Priority ranking will appear after analysis.';
+
+  elements.issueClusters.className = state.results.length && clusters.length ? 'issue-clusters' : 'issue-clusters empty-state';
+  elements.issueClusters.innerHTML = state.results.length && clusters.length ? renderIssueClusters(clusters) : 'Issue clusters will appear after analysis.';
+
+  elements.prSpecSection.className = state.results.length && spec ? 'pr-spec-section' : 'pr-spec-section empty-state';
+  elements.prSpecSection.innerHTML = state.results.length && spec ? renderPRSpec(spec) : 'PR Spec will appear after analysis.';
+
+  elements.implPromptSection.className = state.results.length && spec ? 'impl-prompt-section' : 'impl-prompt-section empty-state';
+  elements.implPromptSection.innerHTML = state.results.length && spec ? renderImplPrompt(spec) : 'Implementation Prompt will appear after analysis.';
+
   elements.resultsList.className = state.results.length ? 'results-list' : 'results-list empty-state';
   elements.resultsList.innerHTML = state.results.length ? state.results.map(resultCard).join('') : 'No analysis yet.';
 }
@@ -241,9 +278,9 @@ function clusterTitleFor(item) {
   const text = item.originalPost.toLowerCase();
   const reasons = (item.reasons || []).join(' ').toLowerCase();
   if (item.decision === 'discard') return 'Likely noise';
+  if (item.type === 'login failure') return 'Login failures';
   if (item.type === 'pricing complaint') return 'Pricing transparency';
   if (item.type === 'onboarding complaint' || reasons.includes('onboarding')) return 'Onboarding confusion';
-  if (text.includes('login') || text.includes('ログイン') || text.includes('sign in')) return 'Login failures';
   if (text.includes('export') || text.includes('markdown') || text.includes('json') || text.includes('エクスポート')) return 'Export guidance';
   if (item.type === 'docs complaint') return 'Documentation gaps';
   if (text.includes('slow') || text.includes('重い') || text.includes('遅い')) return 'Performance complaints';
@@ -269,12 +306,13 @@ function highestEvidenceLevel(items) {
 }
 
 function getIssueClusters() {
-  const groups = state.results.reduce((acc, item) => {
-    const title = clusterTitleFor(item);
-    acc[title] = acc[title] || [];
-    acc[title].push(item);
-    return acc;
-  }, {});
+  const groups = usefulResults()
+    .reduce((acc, item) => {
+      const title = clusterTitleFor(item);
+      acc[title] = acc[title] || [];
+      acc[title].push(item);
+      return acc;
+    }, {});
   const severityOrder = { high: 3, medium: 2, low: 1 };
   const actionabilityOrder = { high: 3, medium: 2, low: 1 };
 
@@ -282,7 +320,7 @@ function getIssueClusters() {
     .map(([title, items]) => ({
       title,
       frequency: items.length,
-      representativeExample: items.find((item) => item.decision === 'keep')?.originalPost || items[0].originalPost,
+      representativeExample: items[0].originalPost,
       severity: highestLevel(items, 'severity', severityOrder),
       actionability: highestLevel(items, 'actionability', actionabilityOrder),
       evidenceLevel: highestEvidenceLevel(items)
@@ -298,9 +336,153 @@ function getPriorityRanking() {
   return [...getIssueClusters()].sort((a, b) => b.priorityScore - a.priorityScore || b.frequency - a.frequency);
 }
 
-function renderPriorityRanking() {
-  const ranking = getPriorityRanking();
-  if (!ranking.length) return 'No priority ranking yet.';
+function generatePRSpec(cluster) {
+  if (!cluster) return null;
+
+  const example = cluster.representativeExample.toLowerCase();
+  const type = cluster.title;
+
+  // Dynamic Acceptance Criteria
+  const ac = [];
+  if (example.includes('confusing')) ac.push(`Rewrite labels and instructions in the ${type.toLowerCase()} section to use clearer language`);
+  if (example.includes('hard to use')) ac.push(`Reduce number of clicks required for common tasks in the ${type.toLowerCase()} flow`);
+  if (example.includes('slow') || example.includes('lag') || example.includes('heavy')) ac.push(`Ensure the ${type.toLowerCase()} UI responds in under 200ms during normal interaction`);
+  if (example.includes('broken') || example.includes('bug') || example.includes('error')) ac.push(`Ensure the system correctly handles the reported ${type.toLowerCase()} failure state without crashing`);
+  if (example.includes('missing') || example.includes('add')) ac.push(`Implement a minimal version of the ${type.toLowerCase()} feature that fulfills the primary user need`);
+  if (example.includes('ios')) ac.push('Verify the fix works on iOS Safari and Chrome mobile');
+  if (example.includes('android')) ac.push('Verify the fix works on Android Chrome mobile');
+  if (example.includes('crash')) ac.push('Verify no application crash occurs when the reported trigger path is executed');
+
+  // Specific requirements from example
+  if (example.includes('import')) ac.push('Show a clear "next step" instruction immediately after feedback import');
+  if (example.includes('analyze')) ac.push('Add a visual highlight or tooltip to the Analyze button when feedback is ready');
+  if (example.includes('export')) ac.push('Show a confirmation message and the file name after a successful export');
+  if (example.includes('login') || example.includes('sign in')) ac.push('Display a specific error message and a "forgot password" link when login fails');
+
+  if (ac.length === 0) {
+    const snippet = cluster.representativeExample.slice(0, 80).replace(/\n/g, ' ');
+    ac.push(`Implement a solution that specifically resolves this reported problem: "${snippet}..."`);
+  }
+
+  // Dynamic Suggested Files
+  const suggestedFiles = [];
+  const textKeywords = ['word', 'text', 'label', 'title', 'instruction', 'description', 'copy', 'docs', 'explanation', 'onboarding', 'message', 'guidance', 'ui'];
+  const styleKeywords = ['visual', 'color', 'layout', 'css', 'style', 'hidden', 'visible', 'prominent', 'highlight', 'look', 'feel', 'ui'];
+  const logicKeywords = ['behavior', 'logic', 'calculate', 'rank', 'filter', 'process', 'save', 'load', 'export', 'analyze', 'bug', 'crash', 'fail', 'click', 'button', 'import'];
+
+  if (textKeywords.some(k => example.includes(k))) suggestedFiles.push('index.html');
+  if (styleKeywords.some(k => example.includes(k))) suggestedFiles.push('style.css');
+  if (logicKeywords.some(k => example.includes(k)) || suggestedFiles.length === 0) suggestedFiles.push('app.js');
+
+  // Dedupe and sort
+  const finalFiles = [...new Set(suggestedFiles)].sort();
+
+  // Dynamic Risk Assessment
+  let riskLevel = 'low';
+  if (example.includes('analyze') || example.includes('rank') || example.includes('classification')) riskLevel = 'high';
+  else if (finalFiles.includes('app.js') && finalFiles.length > 1) riskLevel = 'medium';
+
+  // Dynamic Effort Estimate
+  let effort = 'small';
+  if (cluster.severity === 'high' || cluster.frequency > 5 || finalFiles.length === 3) effort = 'large';
+  else if (cluster.severity === 'medium' || cluster.frequency > 2 || finalFiles.length === 2) effort = 'medium';
+
+  // Dynamic Verification Steps
+  const ver = [
+    'Load the application in a local browser',
+    `Perform actions to reproduce the scenario: "${cluster.representativeExample.slice(0, 60)}..."`,
+  ];
+  if (example.includes('import')) ver.push('Confirm next-step guidance appears after import');
+  if (example.includes('analyze')) ver.push('Confirm Analyze button is visible and functional');
+  if (example.includes('export')) ver.push('Verify export content and success confirmation');
+  ver.push('Confirm the fix behaves as expected and no regressions are introduced');
+
+  return {
+    problem: type,
+    evidenceSummary: cluster.representativeExample,
+    priorityScore: cluster.priorityScore,
+    frequency: cluster.frequency,
+    severity: cluster.severity,
+    actionability: cluster.actionability,
+    evidenceLevel: cluster.evidenceLevel,
+    acceptanceCriteria: ac,
+    suggestedFiles: finalFiles,
+    riskLevel,
+    estimatedEffort: effort,
+    manualVerificationSteps: ver
+  };
+}
+
+function buildPRSpecMarkdown(spec) {
+  if (!spec) return '';
+  return `### PR Spec: ${spec.problem}
+
+**Problem:** ${spec.problem}
+**Evidence summary:** ${spec.evidenceSummary}
+**Priority Score:** ${spec.priorityScore}
+**Frequency:** ${spec.frequency}
+**Severity:** ${spec.severity}
+**Actionability:** ${spec.actionability}
+
+**Acceptance Criteria:**
+${spec.acceptanceCriteria.map(line => `- ${line}`).join('\n')}
+
+**Suggested Files:**
+${spec.suggestedFiles.map(file => `- ${file}`).join('\n')}
+
+**Risk Level:** ${spec.riskLevel}
+**Estimated Effort:** ${spec.estimatedEffort}
+
+**Manual Verification Steps:**
+${spec.manualVerificationSteps.map(line => `- ${line}`).join('\n')}`;
+}
+
+function renderPRSpec(spec) {
+  if (!spec) return 'No PR spec generated.';
+
+  return `<div class="pr-spec-heading">
+      <h3>PR Spec (Highest Priority)</h3>
+      <button id="copyPrSpecBtn" class="primary" type="button">Copy PR Spec</button>
+    </div>
+    <div class="pr-spec-body">
+      <pre id="prSpecOutput">${escapeHtml(buildPRSpecMarkdown(spec))}</pre>
+    </div>`;
+}
+
+function generateImplementationPrompt(spec) {
+  if (!spec) return '';
+  return `Task:
+Improve the ${spec.problem} flow based on user feedback. (Priority Score: ${spec.priorityScore}, Frequency: ${spec.frequency})
+
+Files:
+${spec.suggestedFiles.map(file => `- ${file}`).join('\n')}
+
+Acceptance Criteria:
+${spec.acceptanceCriteria.map(line => `- ${line}`).join('\n')}
+
+Verification:
+${spec.manualVerificationSteps.map((line, i) => `${i + 1}. ${line}`).join('\n')}
+
+Constraints:
+- Keep GitHub Pages compatibility
+- No new backend
+- No new dependencies`;
+}
+
+function renderImplPrompt(spec) {
+  if (!spec) return 'No Implementation Prompt generated.';
+
+  return `<div class="impl-prompt-heading">
+      <h3>Implementation Prompt</h3>
+      <button id="copyImplPromptBtn" class="primary" type="button">Copy Implementation Prompt</button>
+    </div>
+    <div class="impl-prompt-body">
+      <pre id="implPromptOutput">${escapeHtml(generateImplementationPrompt(spec))}</pre>
+    </div>`;
+}
+
+function renderPriorityRanking(ranking) {
+  if (!ranking || !ranking.length) return 'No priority ranking yet.';
   return `<div class="priority-heading"><h3>Priority Ranking</h3><p>Score = (frequency × 3) + severity + actionability + evidence.</p></div>
     <div class="priority-list">${ranking.map((cluster, index) => `<article class="priority-card">
       <div class="priority-rank">#${index + 1}</div>
@@ -313,9 +495,8 @@ function renderPriorityRanking() {
 }
 
 
-function renderIssueClusters() {
-  const clusters = getIssueClusters();
-  if (!clusters.length) return 'No issue clusters yet.';
+function renderIssueClusters(clusters) {
+  if (!clusters || !clusters.length) return 'No issue clusters yet.';
   return `<div class="cluster-heading"><h3>Issue clusters</h3><p>Repeated problems are grouped so you can prioritize the most common themes.</p></div>
     <div class="cluster-grid">${clusters.map((cluster) => `<article class="cluster-card">
       <div class="cluster-title">${escapeHtml(cluster.title)}</div>
@@ -343,8 +524,8 @@ function resultSummaryCard(kept, reduced, discarded) {
 }
 
 function getTopIssueType() {
-  const counts = state.results
-    .filter((item) => item.decision !== 'discard' && item.type !== 'noise' && item.type !== 'praise')
+  const counts = usefulResults()
+    .filter((item) => item.type !== 'noise' && item.type !== 'praise')
     .reduce((acc, item) => {
       acc[item.type] = (acc[item.type] || 0) + 1;
       return acc;
@@ -406,6 +587,8 @@ function saveState() {
       targetArea: elements.targetArea.value,
       feedback: elements.feedbackInput.value,
       results: state.results,
+      clusters: state.clusters,
+      ranking: state.ranking,
       prompt: state.prompt
     }));
   } catch (error) {
@@ -421,10 +604,18 @@ function loadState() {
     elements.targetArea.value = saved.targetArea || '';
     elements.feedbackInput.value = saved.feedback || '';
     state.results = Array.isArray(saved.results) ? saved.results : [];
-    state.prompt = saved.prompt || '';
+    if (state.results.length) {
+      refreshDerivedOutputs();
+    } else {
+      state.clusters = [];
+      state.ranking = [];
+      state.prompt = '';
+    }
   } catch (error) {
     elements.statusMessage.textContent = 'Saved data could not be loaded. Starting with a blank workspace.';
     state.results = [];
+    state.clusters = [];
+    state.ranking = [];
     state.prompt = '';
   }
 
@@ -442,10 +633,17 @@ function downloadFile(filename, type, content) {
 }
 
 function markdownExport() {
-  const priorities = getPriorityRanking().slice(0, 3).map((cluster, index) => `${index + 1}. **${cluster.title}** — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}\n   - Representative example: ${cluster.representativeExample}`).join('\n');
-  const clusters = getIssueClusters().map((cluster) => `- **${cluster.title}** — frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}\n  - Representative example: ${cluster.representativeExample}`).join('\n');
-  const rows = state.results.map((item) => `- **${item.decision} / ${item.type} / ${item.severity}** — ${item.extractedProblem}\n  - Actionability: ${item.actionability}\n  - Evidence: ${item.evidenceLevel}\n  - Why classified this way: ${(item.reasons || []).join(', ')}\n  - Suggested fix: ${item.suggestedFix}\n  - Original: ${item.originalPost}`).join('\n');
-  return `# Signal-to-Fix Analysis\n\n## Priority Ranking\n\n${priorities || 'No priorities yet.'}\n\n## Issue Clusters\n\n${clusters || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
+  const ranking = state.ranking;
+  const priorities = ranking.slice(0, 3).map((cluster, index) => `${index + 1}. **${cluster.title}** — score: ${cluster.priorityScore}; frequency: ${cluster.frequency}\n   - Representative example: ${cluster.representativeExample}`).join('\n');
+  const clusterList = state.clusters.map((cluster) => `- **${cluster.title}** — frequency: ${cluster.frequency}; severity: ${cluster.severity}; actionability: ${cluster.actionability}\n  - Representative example: ${cluster.representativeExample}`).join('\n');
+  const rows = state.results
+    .filter((item) => item.decision === KEEP_DECISION)
+    .map((item) => `- **${item.decision} / ${item.type} / ${item.severity}** — ${item.extractedProblem}\n  - Actionability: ${item.actionability}\n  - Evidence: ${item.evidenceLevel}\n  - Why classified this way: ${(item.reasons || []).join(', ')}\n  - Suggested fix: ${item.suggestedFix}\n  - Original: ${item.originalPost}`).join('\n');
+  const topCluster = ranking[0];
+  const spec = topCluster ? generatePRSpec(topCluster) : null;
+  const prSpec = spec ? buildPRSpecMarkdown(spec) : '';
+  const implPrompt = spec ? generateImplementationPrompt(spec) : '';
+  return `# Signal-to-Fix Analysis\n\n## Priority Ranking\n\n${priorities || 'No priorities yet.'}\n\n## PR Spec\n\n${prSpec || 'No PR Spec generated.'}\n\n## Implementation Prompt\n\n\`\`\`text\n${implPrompt || 'No Implementation Prompt generated.'}\n\`\`\`\n\n## Issue Clusters\n\n${clusterList || 'No clusters yet.'}\n\n## Results\n\n${rows || 'No analysis yet.'}\n\n## Codex Prompt\n\n\`\`\`text\n${state.prompt || buildCodexPrompt()}\n\`\`\`\n`;
 }
 
 async function copyPrompt() {
@@ -498,6 +696,8 @@ function clearAll() {
   elements.targetArea.value = '';
   elements.feedbackInput.value = '';
   state.results = [];
+  state.clusters = [];
+  state.ranking = [];
   state.prompt = '';
   render();
   elements.statusMessage.textContent = 'Cleared.';
@@ -508,8 +708,83 @@ elements.loadSampleBtn.addEventListener('click', loadSampleFeedback);
 elements.copyPromptBtn.addEventListener('click', copyPrompt);
 elements.copyPromptInlineBtn.addEventListener('click', copyPrompt);
 elements.exportMdBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.md`, 'text/markdown', markdownExport()));
-elements.exportJsonBtn.addEventListener('click', () => downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({ context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value }, priorityRanking: getPriorityRanking(), issueClusters: getIssueClusters(), results: state.results, codexPrompt: state.prompt || buildCodexPrompt() }, null, 2)));
+elements.exportJsonBtn.addEventListener('click', () => {
+  const ranking = state.ranking;
+  const topCluster = ranking[0];
+  const spec = topCluster ? generatePRSpec(topCluster) : null;
+  downloadFile(`${EXPORT_BASENAME}.json`, 'application/json', JSON.stringify({
+    context: { productName: elements.productName.value, productUrl: elements.productUrl.value, targetArea: elements.targetArea.value },
+    priorityRanking: ranking,
+    prSpec: spec,
+    implementationPrompt: spec ? generateImplementationPrompt(spec) : null,
+    issueClusters: state.clusters,
+    results: usefulResults(),
+    codexPrompt: state.prompt || buildCodexPrompt()
+  }, null, 2));
+});
 elements.clearBtn.addEventListener('click', clearAll);
-[elements.productName, elements.productUrl, elements.targetArea, elements.feedbackInput].forEach((input) => input.addEventListener('input', saveState));
+elements.prSpecSection.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'copyPrSpecBtn') {
+    copyPrSpec();
+  }
+});
+elements.implPromptSection.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'copyImplPromptBtn') {
+    copyImplPrompt();
+  }
+});
+[elements.productName, elements.productUrl, elements.targetArea].forEach((input) => input.addEventListener('input', saveState));
+elements.feedbackInput.addEventListener('input', () => {
+  state.results = [];
+  state.clusters = [];
+  state.ranking = [];
+  state.prompt = '';
+  render();
+  saveState();
+});
+
+async function copyPrSpec() {
+  const output = document.getElementById('prSpecOutput');
+  if (!output) return;
+  const text = output.textContent;
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    elements.statusMessage.textContent = 'PR Spec copied to clipboard.';
+  } catch (error) {
+    elements.statusMessage.textContent = 'Copy failed.';
+  }
+}
+
+async function copyImplPrompt() {
+  const output = document.getElementById('implPromptOutput');
+  if (!output) return;
+  const text = output.textContent;
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    elements.statusMessage.textContent = 'Implementation Prompt copied to clipboard.';
+  } catch (error) {
+    elements.statusMessage.textContent = 'Copy failed.';
+  }
+}
 
 loadState();
