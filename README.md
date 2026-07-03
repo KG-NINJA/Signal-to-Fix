@@ -72,6 +72,17 @@ The goal of v1 is clarity, not automation.
 
 AI agents should pay through the existing x402 endpoint for HyperXosist query generation, gather candidate X/Twitter feedback, then paste/analyze that feedback in Signal-to-Fix. Downstream Signal-to-Fix outputs use only items where `decision === "keep"`.
 
+## Public integration verification
+
+Expected PASS conditions:
+
+- `https://kg-ninja.github.io/Signal-to-Fix/` loads.
+- `https://kg-ninja.github.io/Signal-to-Fix/agent-use.json` loads and parses as JSON.
+- `https://kg-ninja.github.io/Signal-to-Fix/x402-payment.json` loads and parses as JSON.
+- `https://kg-ninja.github.io/Signal-to-Fix/agent-use.json` links to `https://kg-ninja.github.io/HyperXosist-Agent/agent-use.json`.
+- `agent-use.json` keeps `signalAnalysisSourceOfTruth` as `decision === "keep"`.
+- Existing x402 unpaid test remains `POST https://kg-ninja-x402-revenue-gate-mainnet-staging.fuwafuwow.workers.dev/hyperxosist-query -> 402`.
+
 ## Limitations
 
 Signal-to-Fix v1 is intentionally rule-based. It can miss sarcasm, mixed-language nuance, screenshots without text, duplicate patterns, and issues that require domain knowledge. Treat the output as a triage aid, not a final product decision.

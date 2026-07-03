@@ -3,6 +3,15 @@
   "version": "1.0.0",
   "description": "Machine-readable entrypoint for AI agents that turn X/Twitter feedback into keep-only PR specs and implementation prompts.",
   "requiresPaymentForAgentUse": true,
+  "agentConversionSummary": {
+    "problemSolved": "Turns noisy feedback into actionable keep-only issue clusters, priority ranking, PR specs, implementation prompts, Codex prompts, Markdown export, and JSON export.",
+    "whenToUse": "Use after an agent has gathered candidate X/Twitter feedback and needs a reviewable implementation plan without letting weak or discarded posts affect downstream output.",
+    "inputToSend": "productName, productUrl, targetArea, and one feedback string per candidate post.",
+    "expectedOutput": "Keep-only analytical outputs: issue clusters, priority ranking, highest-priority PR spec, implementation prompt, Codex prompt, Markdown export, and JSON export.",
+    "paidAction": "Use the linked HyperXosist-Agent x402 endpoint to generate/search candidate X feedback before running Signal-to-Fix as an agent workflow.",
+    "nextUrl": "https://kg-ninja.github.io/HyperXosist-Agent/agent-use.json",
+    "on402": "Read x402-payment.json and paymentOptionsEndpoint, complete the x402 payment, then retry the same POST to the payment endpoint."
+  },
   "payment": {
     "scheme": "x402",
     "manifest": "x402-payment.json",
@@ -34,6 +43,11 @@
     "Paste feedback into Signal-to-Fix.",
     "Use only decision === \"keep\" items for clusters, ranking, PR specs, implementation prompts, Codex prompts, Markdown export, and JSON export."
   ],
+  "complementaryPositioning": {
+    "signalToFix": "Feedback/noise -> actionable issue, PR spec, and implementation prompt.",
+    "hyperxosist": "Agent-facing execution/query layer with x402 payment flow.",
+    "whyTogether": "HyperXosist helps an agent find cleaner feedback candidates through a paid query path; Signal-to-Fix converts those candidates into keep-only implementation artifacts."
+  },
   "inputSchema": {
     "type": "object",
     "properties": {
